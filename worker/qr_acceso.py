@@ -34,7 +34,7 @@ def main() -> int:
         import qrcode
     except ImportError:
         log("Falta la libreria qrcode. Instalala con:")
-        log("  .venv\Scripts\python.exe -m pip install qrcode")
+        log(r"  .venv\Scripts\python.exe -m pip install qrcode")
         return 1
 
     destino = f"{args.url.rstrip('/')}/?token={API_TOKEN}"
@@ -45,7 +45,7 @@ def main() -> int:
 
     print()
     codigo.print_ascii(invert=True)
-    print(f"  Escanealo con la camara del movil, con WireGuard conectado.")
+    print("  Escanealo con la camara del movil, con WireGuard conectado.")
     print(f"  Apunta a {args.url} y entra solo, sin teclear el token.")
     print()
     return 0
