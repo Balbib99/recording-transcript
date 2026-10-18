@@ -27,3 +27,6 @@ server/.env
 
 # configuracion local del worker
 worker/.env
+
+worker/worker.log
+worker/worker.log.anterior

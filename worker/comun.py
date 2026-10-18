@@ -29,12 +29,29 @@ SSH_HOST = os.environ.get("RC_SSH_HOST", "pi-rcraft").strip()
 TUNEL_LOCAL = int(os.environ.get("RC_TUNNEL_LOCAL_PORT", "8000"))
 TUNEL_REMOTO = os.environ.get("RC_TUNNEL_REMOTE", "127.0.0.1:8000")
 ESPERA = int(os.environ.get("RC_POLL_SECONDS", "15"))
+# Cuando el worker corre en segundo plano no hay consola donde mirar: con
+# RC_LOG_FILE cada linea se guarda tambien en un fichero.
+FICHERO_LOG = os.environ.get("RC_LOG_FILE", "").strip()
 
 CABECERAS = {"Authorization": f"Bearer {API_TOKEN}"}
 
 
 def log(mensaje: str = "") -> None:
-    print(f"{dt.datetime.now():%H:%M:%S}  {mensaje}", flush=True)
+    linea = f"{dt.datetime.now():%H:%M:%S}  {mensaje}"
+    print(linea, flush=True)
+    if not FICHERO_LOG:
+        return
+    try:
+        ruta = Path(FICHERO_LOG)
+        if not ruta.is_absolute():
+            ruta = RAIZ / ruta
+        # Rotacion sencilla: al pasar de 2 MB se renombra y se empieza de cero.
+        if ruta.exists() and ruta.stat().st_size > 2 * 1024 * 1024:
+            ruta.replace(ruta.with_suffix(ruta.suffix + ".anterior"))
+        with open(ruta, "a", encoding="utf-8") as fichero:
+            fichero.write(f"{dt.datetime.now():%Y-%m-%d} {linea}\n")
+    except OSError:
+        pass
 
 
 class Tunel:
