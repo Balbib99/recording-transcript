@@ -1,0 +1,65 @@
+# RecordingCraft - configuracion
+# Copia este fichero a config.toml y ajusta lo que necesites.
+# Las rutas relativas se resuelven desde la raiz del proyecto.
+
+[paths]
+inbox    = "data/inbox"      # aqui dejas los .m4a del Grabador del Pixel
+meetings = "data/meetings"   # una carpeta por reunion procesada
+archive  = "data/archive"    # destino del audio original tras procesarlo
+
+[input]
+# Extensiones que se consideran grabaciones validas en el inbox.
+extensions = [".m4a", ".mp3", ".wav", ".ogg", ".opus", ".flac", ".aac", ".mp4", ".amr"]
+# Que hacer con el fichero original del inbox cuando el procesado termina bien:
+#   "archive" -> moverlo a paths.archive
+#   "keep"    -> dejarlo donde esta (no se reprocesa: se reconoce por su hash)
+on_success = "archive"
+# Guardar una copia del audio dentro de la carpeta de la reunion.
+# Necesario para `rc speakers --clips` y para escuchar junto a la transcripcion.
+keep_audio_in_meeting = true
+
+[whisper]
+model = "large-v3"          # tiny | base | small | medium | large-v2 | large-v3 | distil-large-v3
+language = "es"             # "" o "auto" para deteccion automatica
+device = "cuda"             # cuda | cpu
+compute_type = "int8_float16"   # GTX 1660 (6 GB): int8_float16. Si da problemas: int8. En CPU: int8
+batch_size = 4              # bajalo a 2 si te quedas sin VRAM
+# Pista de contexto para mejorar nombres propios y jerga (opcional):
+initial_prompt = ""
+
+[align]
+# Alineacion forzada: timestamps precisos palabra a palabra. Muy recomendable:
+# sin esto la diarizacion asigna hablantes de forma mucho mas burda.
+enabled = true
+
+[diarization]
+enabled = true
+# Modelo de pyannote. community-1 es el actual y el unico que funciona entero con
+# pyannote-audio 4.x: el antiguo "pyannote/speaker-diarization-3.1" sigue bajando
+# componentes de community-1, asi que igualmente hay que aceptar sus condiciones.
+model = "pyannote/speaker-diarization-community-1"
+# Numero exacto de personas, si lo sabes (0 = desconocido). Equivale a --speakers.
+num_speakers = 0
+# 0 = desconocido (pyannote lo decide). Acotarlo mejora bastante el resultado
+# si sabes cuanta gente habia en la reunion.
+min_speakers = 0
+max_speakers = 0
+
+[privacy]
+# pyannote.audio 4.x manda por defecto trazas de uso a https://otel.pyannote.ai
+# (version, un id de sesion aleatorio, la DURACION del audio y el numero de
+# hablantes; nunca el audio ni el texto). Con false se desactiva del todo.
+telemetry = false
+# Modo sin red: con true no se contacta con ningun servidor y solo se usan los
+# modelos ya descargados. Activalo cuando hayas procesado al menos una vez.
+# Si falta algun modelo en la cache, el proceso fallara en vez de descargarlo.
+offline = false
+
+[output]
+formats = ["md", "txt", "srt", "json"]
+# Une intervenciones seguidas del mismo hablante separadas por menos de N segundos.
+merge_gap_seconds = 1.5
+# Mostrar marca de tiempo en cada intervencion del Markdown.
+timestamps = true
+# Segundos de audio de muestra que se extraen por hablante con `rc speakers --clips`.
+sample_clip_seconds = 12

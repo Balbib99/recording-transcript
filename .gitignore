@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+config.toml
+data/inbox/*
+data/meetings/*
+data/archive/*
+!data/inbox/.gitkeep
+!data/meetings/.gitkeep
+!data/archive/.gitkeep
+models/
+*.log
+
+# artefactos de build
+*.egg-info/
+build/
+dist/
+
+# Documentacion del servidor: inventario, puertos y configuracion de la Pi.
+# Se queda en local a proposito; el repositorio es publico.
+docs/servidor-pi/

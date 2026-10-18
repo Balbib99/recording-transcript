@@ -1,0 +1,3 @@
+# WhisperX arrastra faster-whisper, ctranslate2, pyannote.audio y transformers.
+# PyTorch se instala aparte (ver scripts/install.ps1) para elegir la rueda CUDA correcta.
+whisperx>=3.4.2

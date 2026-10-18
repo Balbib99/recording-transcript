@@ -1,0 +1,10 @@
+# Normaliza finales de linea: el proyecto se edita en Windows y se ejecuta
+# tambien en Linux (Raspberry Pi), donde un CRLF rompe los scripts de shell.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.sh  text eol=lf
+*.m4a binary
+*.mp3 binary
+*.wav binary
