@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import datetime as dt
 import gc
+import logging
+import os
 import tempfile
+import warnings
 from pathlib import Path
 from typing import Callable
 
@@ -12,6 +15,39 @@ from recordingcraft import audio as au
 from recordingcraft.config import Config
 
 Logger = Callable[[str], None]
+
+
+def silenciar_ruido() -> None:
+    """Calla los avisos conocidos e inofensivos de la pila de WhisperX.
+
+    Ninguno afecta al resultado, pero tapan los mensajes utiles:
+      - torchcodec: pyannote avisa de que no puede decodificar audio el mismo.
+        Da igual: le pasamos la forma de onda ya decodificada con ffmpeg.
+      - TF32 desactivado: decision de pyannote por reproducibilidad.
+      - std() con 0 grados de libertad: ocurre con segmentos de voz muy cortos.
+      - Lightning: migra el checkpoint de version en cada carga.
+
+    Con RC_VERBOSE=1 no se filtra nada.
+    """
+    if os.environ.get("RC_VERBOSE", "").strip() in ("1", "true", "si"):
+        return
+    # Los patrones llevan "(?s).*" delante porque filterwarnings ancla al
+    # principio del mensaje, y alguno de estos avisos empieza con un salto de
+    # linea; sin eso, el filtro no llega a aplicarse nunca.
+    for patron in (
+        r"torchcodec is not installed correctly",
+        r"TensorFloat-32 \(TF32\) has been disabled",
+        r"degrees of freedom is <= 0",
+        r"Lightning automatically upgraded",
+        r"`torchaudio\..*` has been deprecated",
+    ):
+        warnings.filterwarnings("ignore", message=f"(?s).*{patron}")
+    logging.getLogger("pytorch_lightning.utilities.migration").setLevel(logging.ERROR)
+    logging.getLogger("lightning.pytorch.utilities.migration").setLevel(logging.ERROR)
+    logging.getLogger("speechbrain").setLevel(logging.ERROR)
+
+
+silenciar_ruido()
 
 DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
 
