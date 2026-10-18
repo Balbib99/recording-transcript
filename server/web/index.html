@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<meta name="description" content="Transcripciones de reuniones">
+<title>Reuniones</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="iconos/icono-192.png">
+<link rel="apple-touch-icon" href="iconos/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+
+<!-- Primera ejecucion: hace falta el token de la API -->
+<section id="vista-token" class="vista oculto">
+  <div class="centrado">
+    <img src="iconos/icono-192.png" alt="" width="72" height="72" class="logo">
+    <h1>Reuniones</h1>
+    <p class="apagado">Pega el token de la API para empezar. Se guarda solo en este
+      dispositivo.</p>
+    <form id="form-token">
+      <input type="password" id="campo-token" placeholder="Token" autocomplete="off"
+             spellcheck="false" required>
+      <button type="submit" class="principal">Entrar</button>
+    </form>
+    <p id="error-token" class="error oculto"></p>
+  </div>
+</section>
+
+<!-- Listado de reuniones -->
+<section id="vista-lista" class="vista oculto">
+  <header class="barra">
+    <h1>Reuniones</h1>
+    <div class="acciones">
+      <span id="indicador" class="punto" title="Estado de la conexion"></span>
+      <button id="boton-recargar" class="icono" aria-label="Recargar">&#8635;</button>
+    </div>
+  </header>
+
+  <div id="resumen" class="resumen"></div>
+  <div id="lista" class="lista"></div>
+  <p id="lista-vacia" class="vacio oculto">
+    Todavia no hay grabaciones.<br><span class="apagado">Sube la primera con el boton de abajo.</span>
+  </p>
+
+  <div class="pie">
+    <label class="principal subir">
+      <input type="file" id="campo-fichero" accept="audio/*,video/mp4" hidden>
+      Subir grabacion
+    </label>
+  </div>
+
+  <div id="progreso" class="progreso oculto">
+    <div class="progreso-texto"><span id="progreso-nombre"></span> <span id="progreso-pct"></span></div>
+    <div class="progreso-barra"><div id="progreso-relleno"></div></div>
+  </div>
+</section>
+
+<!-- Detalle de una reunion -->
+<section id="vista-detalle" class="vista oculto">
+  <header class="barra">
+    <button id="boton-volver" class="icono" aria-label="Volver">&#8592;</button>
+    <h1 id="detalle-titulo">Reunion</h1>
+    <div class="acciones">
+      <button id="boton-copiar" class="icono" aria-label="Copiar texto">&#128203;</button>
+    </div>
+  </header>
+  <div id="detalle" class="detalle"></div>
+</section>
+
+<div id="aviso" class="aviso oculto"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

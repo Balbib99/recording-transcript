@@ -1,0 +1,18 @@
+{
+  "name": "Reuniones",
+  "short_name": "Reuniones",
+  "description": "Transcripciones de reuniones con hablantes identificados",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1116",
+  "theme_color": "#0e1116",
+  "lang": "es",
+  "icons": [
+    { "src": "iconos/icono-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "iconos/icono-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "iconos/icono-512-recortable.png", "sizes": "512x512",
+      "type": "image/png", "purpose": "maskable" }
+  ]
+}

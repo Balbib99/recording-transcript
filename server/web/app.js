@@ -1,0 +1,355 @@
+/* Reuniones - logica de la PWA.
+   Sin dependencias: fetch, un poco de DOM y enrutado por hash. */
+
+const $ = (sel) => document.querySelector(sel);
+
+const CLAVE_TOKEN = 'rc_token';
+const CLAVE_CACHE = 'rc_ultima_lista';
+
+let token = localStorage.getItem(CLAVE_TOKEN) || '';
+let temporizador = null;
+
+// ----------------------------------------------------------------- utiles
+
+const reloj = (s) => {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), seg = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(seg).padStart(2, '0')}`
+           : `${m}:${String(seg).padStart(2, '0')}`;
+};
+
+const duracion = (s) => {
+  if (!s) return '';
+  const m = Math.round(s / 60);
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+};
+
+const fecha = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const hoy = new Date();
+  const mismoDia = d.toDateString() === hoy.toDateString();
+  return mismoDia
+    ? `hoy ${d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`
+    : d.toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
+function avisar(texto, malo = false) {
+  const el = $('#aviso');
+  el.textContent = texto;
+  el.classList.toggle('malo', malo);
+  el.classList.remove('oculto');
+  clearTimeout(avisar._t);
+  avisar._t = setTimeout(() => el.classList.add('oculto'), 3500);
+}
+
+function enLinea(si) {
+  $('#indicador').classList.toggle('sin-red', !si);
+}
+
+// -------------------------------------------------------------------- API
+
+async function api(ruta, opciones = {}) {
+  const respuesta = await fetch(`api${ruta}`, {
+    ...opciones,
+    headers: { Authorization: `Bearer ${token}`, ...(opciones.headers || {}) },
+  });
+  if (respuesta.status === 401) {
+    localStorage.removeItem(CLAVE_TOKEN);
+    token = '';
+    mostrar('token');
+    throw new Error('Token rechazado');
+  }
+  if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
+  return respuesta.json();
+}
+
+// ------------------------------------------------------------- navegacion
+
+function mostrar(vista) {
+  for (const v of ['token', 'lista', 'detalle']) {
+    $(`#vista-${v}`).classList.toggle('oculto', v !== vista);
+  }
+}
+
+function enrutar() {
+  if (!token) { mostrar('token'); return; }
+  const ruta = location.hash.slice(1);
+  if (ruta.startsWith('/j/')) {
+    abrirDetalle(ruta.slice(3));
+  } else {
+    mostrar('lista');
+    cargarLista();
+  }
+}
+
+// ---------------------------------------------------------------- listado
+
+function pintarLista(datos) {
+  const { trabajos, resumen } = datos;
+  const contenedor = $('#lista');
+  contenedor.innerHTML = '';
+
+  if (resumen) {
+    const pendientes = resumen.pendiente + resumen.procesando;
+    $('#resumen').textContent = pendientes
+      ? `${pendientes} en cola · ${resumen.hecho} listas`
+      : `${resumen.hecho} transcripcion${resumen.hecho === 1 ? '' : 'es'}`;
+  }
+
+  $('#lista-vacia').classList.toggle('oculto', trabajos.length > 0);
+
+  for (const t of trabajos) {
+    const tarjeta = document.createElement('button');
+    tarjeta.className = 'tarjeta';
+    tarjeta.onclick = () => { location.hash = `/j/${t.id}`; };
+
+    const partes = [fecha(t.creado)];
+    if (t.duracion) partes.push(duracion(t.duracion));
+    if (t.hablantes) partes.push(`${t.hablantes} ${t.hablantes === 1 ? 'voz' : 'voces'}`);
+    if (t.estado === 'fallido' && t.error) partes.push(t.error.slice(0, 60));
+
+    tarjeta.innerHTML = `
+      <h2>
+        <span class="titulo"></span>
+        <span class="estado ${t.estado}">${t.estado}</span>
+      </h2>
+      <div class="meta"></div>`;
+    tarjeta.querySelector('.titulo').textContent = t.titulo || t.fichero;
+    for (const p of partes) {
+      const span = document.createElement('span');
+      span.textContent = p;
+      tarjeta.querySelector('.meta').append(span);
+    }
+    contenedor.append(tarjeta);
+  }
+}
+
+async function cargarLista(silencioso = false) {
+  try {
+    const [lista, estado] = await Promise.all([
+      api('/jobs?limite=100'),
+      api('/estado'),
+    ]);
+    const datos = { trabajos: lista.trabajos, resumen: estado.trabajos };
+    localStorage.setItem(CLAVE_CACHE, JSON.stringify(datos));
+    pintarLista(datos);
+    enLinea(true);
+    programarRefresco(lista.trabajos);
+  } catch (e) {
+    enLinea(false);
+    const guardado = localStorage.getItem(CLAVE_CACHE);
+    if (guardado) {
+      pintarLista(JSON.parse(guardado));
+      if (!silencioso) avisar('Sin conexion: mostrando lo ultimo guardado');
+    } else if (!silencioso) {
+      avisar('No se pudo conectar con el servidor', true);
+    }
+  }
+}
+
+/* Mientras haya algo en marcha se refresca solo; si no, se deja quieto. */
+function programarRefresco(trabajos) {
+  clearTimeout(temporizador);
+  const hayMovimiento = trabajos.some(
+    (t) => t.estado === 'pendiente' || t.estado === 'procesando');
+  if (hayMovimiento && !document.hidden) {
+    temporizador = setTimeout(() => cargarLista(true), 8000);
+  }
+}
+
+// ----------------------------------------------------------------- subida
+
+function subir(fichero) {
+  if (!fichero) return;
+
+  const datos = new FormData();
+  datos.append('file', fichero);
+  datos.append('titulo', fichero.name.replace(/\.[^.]+$/, ''));
+
+  const peticion = new XMLHttpRequest();
+  peticion.open('POST', 'api/jobs');
+  peticion.setRequestHeader('Authorization', `Bearer ${token}`);
+
+  $('#progreso').classList.remove('oculto');
+  $('#progreso-nombre').textContent = fichero.name;
+
+  peticion.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round((e.loaded / e.total) * 100);
+    $('#progreso-pct').textContent = `${pct}%`;
+    $('#progreso-relleno').style.width = `${pct}%`;
+  };
+
+  peticion.onload = () => {
+    $('#progreso').classList.add('oculto');
+    $('#progreso-relleno').style.width = '0';
+    if (peticion.status === 201) {
+      const job = JSON.parse(peticion.responseText);
+      avisar(job.duplicado ? 'Esa grabacion ya estaba subida' : 'Subida. Esperando al worker');
+      cargarLista(true);
+    } else if (peticion.status === 401) {
+      localStorage.removeItem(CLAVE_TOKEN); token = ''; mostrar('token');
+    } else {
+      let detalle = `Error ${peticion.status}`;
+      try { detalle = JSON.parse(peticion.responseText).detail || detalle; } catch {}
+      avisar(detalle, true);
+    }
+  };
+
+  peticion.onerror = () => {
+    $('#progreso').classList.add('oculto');
+    avisar('Fallo la subida', true);
+  };
+
+  peticion.send(datos);
+}
+
+// ---------------------------------------------------------------- detalle
+
+async function abrirDetalle(id) {
+  mostrar('detalle');
+  const caja = $('#detalle');
+  caja.innerHTML = '<p class="apagado">Cargando...</p>';
+
+  let job;
+  try {
+    job = await api(`/jobs/${id}`);
+  } catch {
+    caja.innerHTML = '<p class="error">No se pudo cargar</p>';
+    return;
+  }
+
+  $('#detalle-titulo').textContent = job.titulo || job.fichero;
+
+  if (job.estado !== 'hecho') {
+    const mensajes = {
+      pendiente: 'En cola. Se transcribira cuando el worker este encendido.',
+      procesando: 'Transcribiendo ahora mismo...',
+      fallido: `Fallo: ${job.error || 'motivo desconocido'}`,
+    };
+    caja.innerHTML = `<p class="${job.estado === 'fallido' ? 'error' : 'apagado'}"></p>`;
+    caja.querySelector('p').textContent = mensajes[job.estado] || job.estado;
+    return;
+  }
+
+  let datos;
+  try {
+    datos = await api(`/jobs/${id}/transcripcion`);
+  } catch {
+    caja.innerHTML = '<p class="error">No se pudo cargar la transcripcion</p>';
+    return;
+  }
+  caja.dataset.texto = datos.texto || '';
+  pintarDetalle(caja, job, datos);
+}
+
+function pintarDetalle(caja, job, datos) {
+  caja.innerHTML = '';
+
+  const ficha = document.createElement('dl');
+  ficha.className = 'ficha';
+  const filas = [
+    ['Grabado', fecha(job.creado)],
+    ['Duracion', duracion(datos.duracion) || reloj(datos.duracion)],
+    ['Idioma', datos.idioma || '-'],
+    ['Modelo', datos.modelo || '-'],
+  ];
+  for (const [clave, valor] of filas) {
+    const dt = document.createElement('dt'); dt.textContent = clave;
+    const dd = document.createElement('dd'); dd.textContent = valor;
+    ficha.append(dt, dd);
+  }
+  caja.append(ficha);
+
+  // Asignar un color estable a cada hablante segun su orden
+  const colorDe = new Map();
+  (datos.hablantes || []).forEach((h, i) => colorDe.set(h.etiqueta, `hablante-${i % 6}`));
+
+  if (datos.hablantes?.length) {
+    const fila = document.createElement('div');
+    fila.className = 'hablantes';
+    for (const h of datos.hablantes) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      const nombre = document.createElement('b');
+      nombre.className = colorDe.get(h.etiqueta);
+      nombre.textContent = h.nombre;
+      chip.append(nombre, ` ${reloj(h.segundos)} · ${h.intervenciones}`);
+      fila.append(chip);
+    }
+    caja.append(fila);
+  }
+
+  for (const t of datos.turnos || []) {
+    const bloque = document.createElement('article');
+    bloque.className = 'turno';
+    const cabecera = document.createElement('div');
+    cabecera.className = 'turno-cabecera';
+    const quien = document.createElement('span');
+    quien.className = `turno-hablante ${colorDe.get(t.hablante) || ''}`;
+    quien.textContent = (datos.hablantes || []).find((h) => h.etiqueta === t.hablante)?.nombre
+                        || t.hablante;
+    const cuando = document.createElement('span');
+    cuando.className = 'turno-tiempo';
+    cuando.textContent = reloj(t.inicio);
+    cabecera.append(quien, cuando);
+    const parrafo = document.createElement('p');
+    parrafo.textContent = t.texto;
+    bloque.append(cabecera, parrafo);
+    caja.append(bloque);
+  }
+}
+
+// ------------------------------------------------------------------ inicio
+
+$('#form-token').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const valor = $('#campo-token').value.trim();
+  if (!valor) return;
+  token = valor;
+  try {
+    await api('/estado');
+    localStorage.setItem(CLAVE_TOKEN, token);
+    $('#error-token').classList.add('oculto');
+    location.hash = '';
+    enrutar();
+  } catch {
+    token = '';
+    $('#error-token').textContent = 'Ese token no vale';
+    $('#error-token').classList.remove('oculto');
+  }
+});
+
+$('#campo-fichero').addEventListener('change', (e) => {
+  subir(e.target.files[0]);
+  e.target.value = '';
+});
+
+$('#boton-recargar').addEventListener('click', () => cargarLista());
+$('#boton-volver').addEventListener('click', () => { location.hash = ''; });
+
+$('#boton-copiar').addEventListener('click', async () => {
+  const texto = $('#detalle').dataset.texto;
+  if (!texto) return avisar('Nada que copiar');
+  try {
+    await navigator.clipboard.writeText(texto);
+    avisar('Transcripcion copiada');
+  } catch {
+    avisar('El navegador no deja copiar', true);
+  }
+});
+
+window.addEventListener('hashchange', enrutar);
+window.addEventListener('online', () => { enLinea(true); cargarLista(true); });
+window.addEventListener('offline', () => enLinea(false));
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !location.hash) cargarLista(true);
+});
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+enrutar();

@@ -19,6 +19,7 @@ from fastapi import (
     Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status,
 )
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import config, db
 
@@ -300,3 +301,13 @@ def borrar(job_id: str) -> dict[str, Any]:
     (config.RESULT_DIR / f"{job_id}.json").unlink(missing_ok=True)
     db.borrar_job(job_id)
     return {"borrado": job_id}
+
+
+# ---------------------------------------------------------------------- web
+# La PWA se sirve desde la propia API para que comparta origen: asi el service
+# worker funciona y no hace falta configurar CORS en ningun sitio.
+# Va al final a proposito: monta en "/" y se tragaria las rutas de arriba.
+
+WEB = Path(__file__).resolve().parents[1] / "web"
+if WEB.is_dir():
+    app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
