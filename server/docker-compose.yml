@@ -29,8 +29,20 @@ services:
       retries: 3
       start_period: 10s
 
+    # Se une a la red "edge" para que Caddy pueda alcanzarla por nombre, igual
+    # que hace con el resto de servicios. El puerto en loopback se mantiene
+    # para el tunel SSH del worker.
+    networks:
+      edge:
+        aliases:
+          - recordingcraft-api
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  edge:
+    external: true
