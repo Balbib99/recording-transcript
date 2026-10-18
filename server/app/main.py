@@ -214,6 +214,83 @@ def transcripcion(job_id: str) -> dict[str, Any]:
     return json.loads(ruta.read_text(encoding="utf-8"))
 
 
+# ------------------------------------------------------------------- worker
+# Lo que usa el equipo con GPU: pide trabajo, lo transcribe y devuelve el
+# resultado. Mismo token que el resto de la API.
+
+@app.post("/api/worker/reclamar", dependencies=[Protegido])
+def reclamar(worker: Annotated[str, Form()] = "worker") -> dict[str, Any]:
+    """Entrega el trabajo pendiente mas antiguo, o nada si la cola esta vacia.
+
+    Devuelve 200 con `trabajo: null` en lugar de 404 porque "no hay nada que
+    hacer" es la respuesta normal, no un error: el worker pregunta cada pocos
+    segundos.
+    """
+    job = db.reclamar_siguiente(worker.strip()[:60] or "worker")
+    if job is None:
+        return {"trabajo": None}
+    return {"trabajo": {**publico(job), "sha256": job["sha256"],
+                        "intentos": job["intentos"]}}
+
+
+@app.post("/api/jobs/{job_id}/resultado", dependencies=[Protegido])
+async def entregar_resultado(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Recibe la transcripcion terminada y cierra el trabajo."""
+    job = db.obtener_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
+    if not isinstance(payload, dict) or "segmentos" not in payload:
+        raise HTTPException(
+            status_code=400,
+            detail="El resultado debe ser un objeto JSON con una clave 'segmentos'",
+        )
+
+    config.crear_directorios()
+    destino = config.RESULT_DIR / f"{job_id}.json"
+    # Se escribe aparte y se renombra: si el proceso muere a medias, no queda
+    # un JSON truncado que luego falle al leerse.
+    temporal = destino.with_suffix(".json.parcial")
+    temporal.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+    temporal.replace(destino)
+
+    actualizado = db.actualizar(
+        job_id,
+        estado="hecho",
+        terminado=db.ahora(),
+        error=None,
+        duracion=payload.get("duracion"),
+        hablantes=len(payload.get("hablantes") or []) or None,
+        idioma=payload.get("idioma"),
+    )
+    return publico(actualizado)  # type: ignore[arg-type]
+
+
+@app.post("/api/jobs/{job_id}/fallo", dependencies=[Protegido])
+def marcar_fallo(job_id: str, error: Annotated[str, Form()]) -> dict[str, Any]:
+    """El worker no pudo con el trabajo; queda registrado el motivo."""
+    job = db.obtener_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
+    actualizado = db.actualizar(
+        job_id, estado="fallido", terminado=db.ahora(), error=error[:2000]
+    )
+    return publico(actualizado)  # type: ignore[arg-type]
+
+
+@app.post("/api/jobs/{job_id}/reencolar", dependencies=[Protegido])
+def reencolar(job_id: str) -> dict[str, Any]:
+    """Devuelve a la cola un trabajo fallido, para reintentarlo."""
+    job = db.obtener_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
+    actualizado = db.actualizar(
+        job_id, estado="pendiente", worker=None, reclamado=None,
+        terminado=None, error=None,
+    )
+    return publico(actualizado)  # type: ignore[arg-type]
+
+
 @app.delete("/api/jobs/{job_id}", dependencies=[Protegido])
 def borrar(job_id: str) -> dict[str, Any]:
     job = db.obtener_job(job_id)

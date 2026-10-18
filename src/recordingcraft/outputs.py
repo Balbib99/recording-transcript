@@ -93,7 +93,10 @@ def render_markdown(meeting: Meeting, mapping: dict[str, str], gap: float,
     stats = spk.stats(meeting.segments, mapping)
     total = sum(s.seconds for s in stats) or 1.0
 
-    lines = [f"# {meeting.id}", ""]
+    titulo = (meeting.data.get("title") or "").strip() or meeting.id
+    lines = [f"# {titulo}", ""]
+    if titulo != meeting.id:
+        lines += [f"`{meeting.id}`", ""]
     lines += _meta_lines(meeting)
     lines += ["", "## Hablantes", "",
               "| Hablante | Etiqueta | Tiempo | % | Intervenciones |",

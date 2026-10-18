@@ -24,3 +24,6 @@ docs/servidor-pi/
 # datos locales del servidor
 server/data/
 server/.env
+
+# configuracion local del worker
+worker/.env
