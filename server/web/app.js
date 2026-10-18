@@ -9,6 +9,21 @@ const CLAVE_CACHE = 'rc_ultima_lista';
 let token = localStorage.getItem(CLAVE_TOKEN) || '';
 let temporizador = null;
 
+/* El token se puede pasar en la URL (?token=...) para no teclear 64 caracteres
+   en el movil. Se guarda y se borra de la barra de direcciones en el acto, para
+   que no quede en el historial ni se comparta sin querer al enviar el enlace. */
+(function tokenEnLaUrl() {
+  const parametros = new URLSearchParams(location.search);
+  const recibido = parametros.get('token');
+  if (!recibido) return;
+  token = recibido.trim();
+  localStorage.setItem(CLAVE_TOKEN, token);
+  parametros.delete('token');
+  const limpia = location.pathname + (parametros.toString() ? `?${parametros}` : '')
+                 + location.hash;
+  history.replaceState(null, '', limpia);
+})();
+
 // ----------------------------------------------------------------- utiles
 
 const reloj = (s) => {

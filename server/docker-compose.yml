@@ -20,6 +20,10 @@ services:
     # (fuera del clon de git, para que un git clean nunca se lleve las grabaciones).
     volumes:
       - ${RC_DATA_HOST:-./data}:/data
+      # La web, montada desde el disco: un cambio en la PWA se aplica con un
+      # git pull, sin reconstruir la imagen. La imagen la lleva igualmente
+      # copiada, para que funcione tambien sin este montaje.
+      - ./web:/srv/web:ro
 
     healthcheck:
       test: ["CMD", "python", "-c",
