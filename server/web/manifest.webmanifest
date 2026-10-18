@@ -10,9 +10,40 @@
   "theme_color": "#0e1116",
   "lang": "es",
   "icons": [
-    { "src": "iconos/icono-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "iconos/icono-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "iconos/icono-512-recortable.png", "sizes": "512x512",
-      "type": "image/png", "purpose": "maskable" }
-  ]
+    {
+      "src": "iconos/icono-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "iconos/icono-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "iconos/icono-512-recortable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "share_target": {
+    "action": "compartir",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "titulo",
+      "text": "texto",
+      "files": [
+        {
+          "name": "file",
+          "accept": [
+            "audio/*",
+            "video/mp4",
+            "application/octet-stream"
+          ]
+        }
+      ]
+    }
+  }
 }

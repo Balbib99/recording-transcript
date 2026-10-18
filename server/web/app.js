@@ -176,12 +176,12 @@ function programarRefresco(trabajos) {
 
 // ----------------------------------------------------------------- subida
 
-function subir(fichero) {
+function subir(fichero, titulo = null) {
   if (!fichero) return;
 
   const datos = new FormData();
   datos.append('file', fichero);
-  datos.append('titulo', fichero.name.replace(/\.[^.]+$/, ''));
+  datos.append('titulo', titulo || fichero.name.replace(/\.[^.]+$/, ''));
 
   const peticion = new XMLHttpRequest();
   peticion.open('POST', 'api/jobs');
@@ -356,6 +356,57 @@ $('#boton-copiar').addEventListener('click', async () => {
   }
 });
 
+/* Cuando compartes una grabacion desde la Grabadora, Android la entrega al
+   service worker, que la guarda y redirige aqui con ?compartido=<clave>.
+   La subimos ya con el token y la borramos de la cache. */
+async function recogerCompartido() {
+  const parametros = new URLSearchParams(location.search);
+  const clave = parametros.get('compartido');
+  if (!clave) return;
+
+  parametros.delete('compartido');
+  history.replaceState(null, '', location.pathname
+    + (parametros.toString() ? `?${parametros}` : '') + location.hash);
+
+  if (clave === 'vacio' || clave === 'error') {
+    avisar('No se pudo leer la grabacion compartida', true);
+    return;
+  }
+  if (!token) {
+    avisar('Entra con el token y vuelve a compartir', true);
+    return;
+  }
+
+  try {
+    const cache = await caches.open('reuniones-compartidos');
+    const guardado = await cache.match(clave);
+    if (!guardado) return avisar('La grabacion compartida ya no esta', true);
+
+    const datos = await guardado.blob();
+    const nombre = decodeURIComponent(guardado.headers.get('X-Nombre') || 'grabacion');
+    const titulo = decodeURIComponent(guardado.headers.get('X-Titulo') || '');
+    await cache.delete(clave);
+
+    subir(new File([datos], conExtension(nombre, datos.type), { type: datos.type }),
+          titulo || null);
+  } catch (e) {
+    avisar('Fallo al recoger la grabacion compartida', true);
+  }
+}
+
+/* La Grabadora comparte con nombres que a veces no traen extension, y la API
+   la necesita para saber que es. Se deduce del tipo de contenido. */
+function conExtension(nombre, tipo) {
+  if (/\.[a-z0-9]{2,4}$/i.test(nombre)) return nombre;
+  const porTipo = {
+    'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/aac': '.aac',
+    'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/opus': '.opus',
+    'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/flac': '.flac',
+    'audio/amr': '.amr', 'video/mp4': '.mp4',
+  };
+  return nombre + (porTipo[(tipo || '').split(';')[0]] || '.m4a');
+}
+
 window.addEventListener('hashchange', enrutar);
 window.addEventListener('online', () => { enLinea(true); cargarLista(true); });
 window.addEventListener('offline', () => enLinea(false));
@@ -368,3 +419,4 @@ if ('serviceWorker' in navigator) {
 }
 
 enrutar();
+recogerCompartido();
