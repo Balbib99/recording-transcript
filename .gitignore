@@ -20,3 +20,7 @@ dist/
 # Documentacion del servidor: inventario, puertos y configuracion de la Pi.
 # Se queda en local a proposito; el repositorio es publico.
 docs/servidor-pi/
+
+# datos locales del servidor
+server/data/
+server/.env

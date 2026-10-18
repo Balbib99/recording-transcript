@@ -1,0 +1,36 @@
+services:
+  api:
+    build: .
+    image: recordingcraft-api
+    container_name: recordingcraft-api
+    restart: unless-stopped
+    env_file: .env
+
+    # Solo loopback: el puerto NO queda expuesto a la red.
+    # Es la unica forma fiable de cerrarlo, porque Docker escribe sus reglas
+    # por delante de las de ufw y un "deny" del cortafuegos no le afecta.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    # uid:gid de rcraft en la Pi, para que lo que se escriba en ./data
+    # pertenezca a ese usuario y no a root.
+    user: "1001:1001"
+
+    # Carpeta de datos en el host. En la Pi: /srv/recordingcraft/data
+    # (fuera del clon de git, para que un git clean nunca se lleve las grabaciones).
+    volumes:
+      - ${RC_DATA_HOST:-./data}:/data
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
