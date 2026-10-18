@@ -15,11 +15,6 @@ usa el CLI.
 from __future__ import annotations
 
 import argparse
-import datetime as dt
-import os
-import platform
-import socket
-import subprocess
 import sys
 import tempfile
 import time
@@ -27,118 +22,17 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-RAIZ = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(RAIZ / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import requests  # noqa: E402
+from comun import (  # noqa: E402
+    API_TOKEN, API_URL, ESPERA, RAIZ, WORKER, Tunel, api, esperar_api, log,
+)
 
 from recordingcraft import outputs, speakers as spk, store  # noqa: E402
-from recordingcraft.config import load_config, load_env_file  # noqa: E402
-
-
-# ------------------------------------------------------------ configuracion
-
-load_env_file(RAIZ / "worker" / ".env")
-load_env_file(RAIZ / ".env")
-
-API_URL = os.environ.get("RC_API_URL", "http://127.0.0.1:8000").rstrip("/")
-API_TOKEN = os.environ.get("RC_API_TOKEN", "").strip()
-WORKER = os.environ.get("RC_WORKER_NAME") or f"{platform.node()}-gpu"
-SSH_HOST = os.environ.get("RC_SSH_HOST", "pi-rcraft").strip()
-TUNEL_LOCAL = int(os.environ.get("RC_TUNNEL_LOCAL_PORT", "8000"))
-TUNEL_REMOTO = os.environ.get("RC_TUNNEL_REMOTE", "127.0.0.1:8000")
-ESPERA = int(os.environ.get("RC_POLL_SECONDS", "15"))
-
-CABECERAS = {"Authorization": f"Bearer {API_TOKEN}"}
-
-
-def log(mensaje: str = "") -> None:
-    print(f"{dt.datetime.now():%H:%M:%S}  {mensaje}", flush=True)
-
-
-# -------------------------------------------------------------------- tunel
-
-class Tunel:
-    """Tunel SSH al puerto de la API, con reapertura automatica."""
-
-    def __init__(self) -> None:
-        self.proceso: subprocess.Popen | None = None
-
-    @property
-    def activo(self) -> bool:
-        return self.proceso is not None and self.proceso.poll() is None
-
-    def _puerto_ocupado(self) -> bool:
-        with socket.socket() as s:
-            s.settimeout(1)
-            return s.connect_ex(("127.0.0.1", TUNEL_LOCAL)) == 0
-
-    def abrir(self) -> None:
-        if not SSH_HOST:
-            return
-        if self.activo:
-            return
-        if self._puerto_ocupado():
-            # Ya hay algo escuchando: o un tunel anterior, o la API en local.
-            return
-
-        orden = [
-            "ssh", "-N",
-            "-o", "ExitOnForwardFailure=yes",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
-            "-o", "BatchMode=yes",
-            "-L", f"{TUNEL_LOCAL}:{TUNEL_REMOTO}",
-            SSH_HOST,
-        ]
-        log(f"abriendo tunel SSH a {SSH_HOST} ({TUNEL_LOCAL} -> {TUNEL_REMOTO})")
-        self.proceso = subprocess.Popen(
-            orden, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-        )
-
-        for _ in range(20):
-            time.sleep(0.5)
-            if self._puerto_ocupado():
-                return
-            if not self.activo:
-                error = (self.proceso.stderr.read() or b"").decode(errors="replace")
-                raise RuntimeError(f"el tunel SSH no abrio: {error.strip()[:300]}")
-        raise RuntimeError("el tunel SSH no respondio a tiempo")
-
-    def cerrar(self) -> None:
-        if self.activo and self.proceso is not None:
-            self.proceso.terminate()
-            try:
-                self.proceso.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.proceso.kill()
+from recordingcraft.config import load_config  # noqa: E402
 
 
 # ---------------------------------------------------------------------- API
-
-def api(metodo: str, ruta: str, **kwargs: Any) -> requests.Response:
-    respuesta = requests.request(
-        metodo, f"{API_URL}{ruta}", headers=CABECERAS, timeout=kwargs.pop("timeout", 60),
-        **kwargs,
-    )
-    if respuesta.status_code == 401:
-        raise RuntimeError(
-            "La API rechaza el token. Copia RC_API_TOKEN del .env de la Pi "
-            "(/srv/recordingcraft/app/server/.env) a worker/.env"
-        )
-    return respuesta
-
-
-def esperar_api(intentos: int = 10) -> bool:
-    for _ in range(intentos):
-        try:
-            if requests.get(f"{API_URL}/api/health", timeout=5).ok:
-                return True
-        except requests.RequestException:
-            pass
-        time.sleep(1)
-    return False
-
 
 def reclamar() -> dict[str, Any] | None:
     r = api("POST", "/api/worker/reclamar", data={"worker": WORKER})
@@ -298,9 +192,7 @@ def main() -> int:
     log(f"modelo={cfg.whisper['model']} device={cfg.whisper['device']} "
         f"diarizacion={'si' if cfg.diarization.get('enabled') else 'no'}")
 
-    tunel = Tunel()
-    if args.sin_tunel:
-        globals()["SSH_HOST"] = ""
+    tunel = Tunel(host="" if args.sin_tunel else None)
 
     try:
         tunel.abrir()
