@@ -24,6 +24,9 @@ services:
       # git pull, sin reconstruir la imagen. La imagen la lleva igualmente
       # copiada, para que funcione tambien sin este montaje.
       - ./web:/srv/web:ro
+      # El codigo del servidor, tambien desde disco: desplegar pasa a ser un
+      # git pull y un restart, sin recompilar dependencias en ARM.
+      - ./app:/srv/app:ro
 
     healthcheck:
       test: ["CMD", "python", "-c",

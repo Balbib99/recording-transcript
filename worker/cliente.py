@@ -103,6 +103,19 @@ def cmd_guardar(args) -> int:
     return 0
 
 
+def cmd_hablante(args) -> int:
+    """Pone nombre a una etiqueta: cliente.cmd hablante <id> SPEAKER_00 Ana"""
+    r = api("POST", f"/api/jobs/{args.id}/hablantes",
+            json={args.etiqueta: " ".join(args.nombre)})
+    if not r.ok:
+        detalle = r.json().get("detail", r.text[:200]) if r.text else r.status_code
+        log(f"Error: {detalle}")
+        return 1
+    for h in r.json()["hablantes"]:
+        log(f"  {h['etiqueta']:<12} -> {h['nombre']}")
+    return 0
+
+
 def cmd_reencolar(args) -> int:
     r = api("POST", f"/api/jobs/{args.id}/reencolar")
     log(f"{args.id}: {r.json()['estado']}" if r.ok else f"Error {r.status_code}")
@@ -136,6 +149,12 @@ def main() -> int:
     p.add_argument("id")
     p.add_argument("carpeta", nargs="?")
     p.set_defaults(func=cmd_guardar)
+
+    p = sub.add_parser("hablante", help="pone nombre a un hablante")
+    p.add_argument("id")
+    p.add_argument("etiqueta", help="SPEAKER_00, SPEAKER_01...")
+    p.add_argument("nombre", nargs="+")
+    p.set_defaults(func=cmd_hablante)
 
     p = sub.add_parser("reencolar", help="reintenta un trabajo fallido")
     p.add_argument("id")

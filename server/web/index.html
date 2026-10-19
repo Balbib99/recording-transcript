@@ -70,6 +70,19 @@
   <div id="detalle" class="detalle"></div>
 </section>
 
+<dialog id="dialogo-hablante">
+  <form method="dialog" id="form-hablante">
+    <h2 id="dialogo-titulo">Quien habla</h2>
+    <p class="apagado" id="dialogo-pista"></p>
+    <input type="text" id="campo-nombre" placeholder="Nombre" autocomplete="off"
+           maxlength="60" enterkeyhint="done">
+    <div class="dialogo-botones">
+      <button value="cancelar" class="secundario">Cancelar</button>
+      <button value="guardar" class="principal">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="aviso" class="aviso oculto"></div>
 
 <script src="app.js"></script>

@@ -8,6 +8,7 @@ const CLAVE_CACHE = 'rc_ultima_lista';
 
 let token = localStorage.getItem(CLAVE_TOKEN) || '';
 let temporizador = null;
+let estadoDetalle = null;   // { job, datos } de la reunion abierta
 
 /* El token se puede pasar en la URL (?token=...) para no teclear 64 caracteres
    en el movil. Se guarda y se borra de la barra de direcciones en el acto, para
@@ -257,6 +258,7 @@ async function abrirDetalle(id) {
     return;
   }
   caja.dataset.texto = datos.texto || '';
+  estadoDetalle = { job, datos };
   pintarDetalle(caja, job, datos);
 }
 
@@ -286,12 +288,15 @@ function pintarDetalle(caja, job, datos) {
     const fila = document.createElement('div');
     fila.className = 'hablantes';
     for (const h of datos.hablantes) {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
+      const chip = document.createElement('button');
+      const sinNombrar = h.nombre === h.etiqueta;
+      chip.className = `chip editable${sinNombrar ? ' sin-nombrar' : ''}`;
+      chip.title = 'Tocar para poner el nombre';
       const nombre = document.createElement('b');
       nombre.className = colorDe.get(h.etiqueta);
       nombre.textContent = h.nombre;
       chip.append(nombre, ` ${reloj(h.segundos)} · ${h.intervenciones}`);
+      chip.onclick = () => pedirNombre(h);
       fila.append(chip);
     }
     caja.append(fila);
@@ -316,6 +321,54 @@ function pintarDetalle(caja, job, datos) {
     caja.append(bloque);
   }
 }
+
+// ------------------------------------------------- renombrar hablantes
+
+function primeraFraseDe(etiqueta) {
+  const turno = (estadoDetalle?.datos.turnos || []).find((t) => t.hablante === etiqueta);
+  if (!turno) return '';
+  const frase = turno.texto.slice(0, 90);
+  return `"${frase}${turno.texto.length > 90 ? '...' : ''}"`;
+}
+
+function pedirNombre(hablante) {
+  const dialogo = $('#dialogo-hablante');
+  $('#dialogo-titulo').textContent = `Quien es ${hablante.etiqueta}?`;
+  $('#dialogo-pista').textContent = primeraFraseDe(hablante.etiqueta)
+    || `${reloj(hablante.segundos)} hablando, ${hablante.intervenciones} intervenciones`;
+  const campo = $('#campo-nombre');
+  campo.value = hablante.nombre === hablante.etiqueta ? '' : hablante.nombre;
+  dialogo.dataset.etiqueta = hablante.etiqueta;
+  dialogo.showModal();
+  campo.focus();
+}
+
+async function guardarNombre(etiqueta, nombre) {
+  if (!estadoDetalle) return;
+  const { job } = estadoDetalle;
+  try {
+    const respuesta = await api(`/jobs/${job.id}/hablantes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [etiqueta]: nombre }),
+    });
+    // El servidor devuelve la lista ya actualizada y rehace el texto.
+    estadoDetalle.datos.hablantes = respuesta.hablantes;
+    const fresco = await api(`/jobs/${job.id}/transcripcion`);
+    estadoDetalle.datos = fresco;
+    $('#detalle').dataset.texto = fresco.texto || '';
+    pintarDetalle($('#detalle'), job, fresco);
+    avisar(nombre ? `Ahora es ${nombre}` : 'Nombre quitado');
+  } catch (e) {
+    avisar('No se pudo guardar el nombre', true);
+  }
+}
+
+$('#form-hablante').addEventListener('submit', (e) => {
+  const dialogo = $('#dialogo-hablante');
+  if (e.submitter?.value !== 'guardar') return;
+  guardarNombre(dialogo.dataset.etiqueta, $('#campo-nombre').value.trim());
+});
 
 // ------------------------------------------------------------------ inicio
 

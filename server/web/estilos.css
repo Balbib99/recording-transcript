@@ -297,6 +297,34 @@ input:focus-visible, button:focus-visible, .principal:focus-within {
   outline-offset: 2px;
 }
 
+/* Un hablante sin nombrar invita a tocarlo */
+.chip.editable { cursor: pointer; border-style: dashed; }
+.chip.editable:active { background: var(--superficie); }
+
+dialog {
+  width: min(92vw, 380px);
+  padding: 20px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--superficie);
+  color: var(--texto);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+dialog h2 { margin: 0 0 4px; font-size: 1.05rem; }
+dialog p { margin: 0 0 14px; font-size: .85rem; }
+dialog input { margin-bottom: 14px; }
+
+.dialogo-botones { display: flex; gap: 10px; }
+.dialogo-botones .principal, .dialogo-botones .secundario { flex: 1; }
+.secundario {
+  padding: 15px 18px;
+  font-weight: 600;
+  background: var(--superficie-alta);
+  color: var(--texto);
+  border: 1px solid var(--borde);
+}
+
 .aviso {
   position: fixed;
   left: 16px;

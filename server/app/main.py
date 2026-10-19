@@ -21,7 +21,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import config, db
+from app import config, db, render
 
 
 @asynccontextmanager
@@ -246,6 +246,11 @@ async def entregar_resultado(job_id: str, payload: dict[str, Any]) -> dict[str, 
             detail="El resultado debe ser un objeto JSON con una clave 'segmentos'",
         )
 
+    payload.setdefault("id", job_id)
+    payload.setdefault("titulo", job["titulo"])
+    payload.setdefault("grabado", job["creado"])
+    render.regenerar(payload)
+
     config.crear_directorios()
     destino = config.RESULT_DIR / f"{job_id}.json"
     # Se escribe aparte y se renombra: si el proceso muere a medias, no queda
@@ -265,6 +270,44 @@ async def entregar_resultado(job_id: str, payload: dict[str, Any]) -> dict[str, 
         idioma=payload.get("idioma"),
     )
     return publico(actualizado)  # type: ignore[arg-type]
+
+
+@app.post("/api/jobs/{job_id}/hablantes", dependencies=[Protegido])
+def renombrar_hablantes(job_id: str, nombres: dict[str, str]) -> dict[str, Any]:
+    """Pone nombres reales a las etiquetas SPEAKER_xx.
+
+    No vuelve a procesar nada: reescribe el JSON guardado y rehace el texto.
+    Un nombre vacio devuelve al hablante su etiqueta original.
+    """
+    job = db.obtener_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
+
+    ruta = config.RESULT_DIR / f"{job_id}.json"
+    if not ruta.is_file():
+        raise HTTPException(status_code=409, detail="Ese trabajo no tiene transcripcion")
+
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    etiquetas = {h.get("etiqueta") for h in datos.get("hablantes") or []}
+
+    desconocidas = set(nombres) - etiquetas
+    if desconocidas:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Etiquetas que no existen en esta reunion: {', '.join(sorted(desconocidas))}",
+        )
+
+    for hablante in datos.get("hablantes") or []:
+        if hablante.get("etiqueta") in nombres:
+            nuevo = (nombres[hablante["etiqueta"]] or "").strip()[:60]
+            hablante["nombre"] = nuevo or hablante["etiqueta"]
+
+    render.regenerar(datos)
+    temporal = ruta.with_suffix(".json.parcial")
+    temporal.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporal.replace(ruta)
+
+    return {"id": job_id, "hablantes": datos.get("hablantes") or []}
 
 
 @app.post("/api/jobs/{job_id}/fallo", dependencies=[Protegido])

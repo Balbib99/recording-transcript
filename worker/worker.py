@@ -61,7 +61,7 @@ def construir_resultado(job: dict[str, Any], datos: dict[str, Any],
     datos["recorded_at"] = job["creado"]
 
     reunion = store.Meeting(path=carpeta, data=datos)
-    mapeo: dict[str, str] = {}
+    mapeo: dict[str, str] = {}   # sin renombrar: los nombres se ponen luego
     hueco = float(cfg.output.get("merge_gap_seconds", 1.5))
 
     turnos = outputs.merge_turns(reunion.segments, mapeo, hueco)
@@ -88,8 +88,6 @@ def construir_resultado(job: dict[str, Any], datos: dict[str, Any],
             for t in turnos
         ],
         "segmentos": datos.get("segments", []),
-        "markdown": outputs.render_markdown(reunion, mapeo, hueco, True),
-        "texto": outputs.render_text(reunion, mapeo, hueco),
     }
 
 
