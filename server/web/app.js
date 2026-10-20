@@ -537,7 +537,19 @@ document.addEventListener('visibilitychange', () => {
 });
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').then((registro) => {
+    // Buscar version nueva en cada arranque, no solo cuando Chrome lo decida.
+    registro.update().catch(() => {});
+
+    // Si entra un service worker nuevo mientras la app esta abierta, se recarga
+    // una vez para empezar a usarlo. El guardia evita el bucle infinito.
+    let recargando = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (recargando) return;
+      recargando = true;
+      location.reload();
+    });
+  }).catch(() => {});
 }
 
 enrutar();
