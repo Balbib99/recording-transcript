@@ -432,7 +432,7 @@ async function guardarNombre(etiqueta, nombre) {
   }
 }
 
-$('#form-hablante').addEventListener('submit', (e) => {
+$('#form-hablante')?.addEventListener('submit', (e) => {
   const dialogo = $('#dialogo-hablante');
   if (e.submitter?.value !== 'guardar') return;
   guardarNombre(dialogo.dataset.etiqueta, $('#campo-nombre').value.trim());
@@ -440,7 +440,11 @@ $('#form-hablante').addEventListener('submit', (e) => {
 
 // ------------------------------------------------------------------ inicio
 
-$('#form-token').addEventListener('submit', async (e) => {
+/* Los manejadores se enganchan con ?. a proposito: si un dia el HTML y el
+   JavaScript van desacompasados (una cache a medias, un despliegue parcial),
+   falta un elemento y antes eso tumbaba el script entero, dejando la app en
+   blanco. Mejor que falte un boton a que no arranque nada. */
+$('#form-token')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const valor = $('#campo-token').value.trim();
   if (!valor) return;
@@ -458,16 +462,16 @@ $('#form-token').addEventListener('submit', async (e) => {
   }
 });
 
-$('#campo-fichero').addEventListener('change', (e) => {
+$('#campo-fichero')?.addEventListener('change', (e) => {
   subir(e.target.files[0]);
   e.target.value = '';
 });
 
-$('#boton-recargar').addEventListener('click', () => cargarLista());
-$('#boton-despertar').addEventListener('click', despertarPC);
-$('#boton-volver').addEventListener('click', () => { location.hash = ''; });
+$('#boton-recargar')?.addEventListener('click', () => cargarLista());
+$('#boton-despertar')?.addEventListener('click', despertarPC);
+$('#boton-volver')?.addEventListener('click', () => { location.hash = ''; });
 
-$('#boton-copiar').addEventListener('click', async () => {
+$('#boton-copiar')?.addEventListener('click', async () => {
   const texto = $('#detalle').dataset.texto;
   if (!texto) return avisar('Nada que copiar');
   try {
