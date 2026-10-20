@@ -1,7 +1,7 @@
 /* Service worker: la app abre sin red, conserva lo ultimo leido y recibe las
    grabaciones que se comparten desde la Grabadora del movil. */
 
-const VERSION = 'reuniones-v2';
+const VERSION = 'reuniones-v3';
 const COMPARTIDOS = 'reuniones-compartidos';
 
 const ESQUELETO = [
@@ -86,8 +86,22 @@ self.addEventListener('fetch', (evento) => {
     return;
   }
 
-  // El esqueleto de la app: cache primero, que no cambia entre despliegues.
+  // El esqueleto de la app: red primero, cache como respaldo.
+  //
+  // Antes era al reves y resulto ser un error: una vez instalada, la app se
+  // quedaba con la copia guardada y ningun despliegue le llegaba. Con la red
+  // por delante siempre ves la version actual, y sin cobertura sigue abriendo
+  // con lo ultimo que se guardo.
   evento.respondWith(
-    caches.match(peticion).then((guardado) => guardado || fetch(peticion))
+    fetch(peticion)
+      .then((respuesta) => {
+        if (respuesta.ok) {
+          const copia = respuesta.clone();
+          caches.open(VERSION).then((cache) => cache.put(peticion, copia));
+        }
+        return respuesta;
+      })
+      .catch(() => caches.match(peticion).then(
+        (guardado) => guardado || caches.match('./index.html')))
   );
 });
