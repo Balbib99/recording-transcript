@@ -239,6 +239,9 @@ button, .principal {
   border-radius: 99px;
   background: var(--superficie-alta);
   border: 1px solid var(--borde);
+  /* Los chips son <button> para poder tocarlos: sin esto heredarian el
+     color por defecto del navegador y se volverian ilegibles en oscuro. */
+  color: var(--texto);
 }
 .chip b { font-weight: 650; }
 

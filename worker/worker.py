@@ -15,6 +15,8 @@ usa el CLI.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import ctypes
 import importlib.util
 import socket
 import sys
@@ -119,7 +121,8 @@ def procesar(job: dict[str, Any], cfg) -> None:
         log("  descargando audio")
         descargar_audio(job, audio)
 
-        datos = pipeline.transcribe(audio, cfg, lambda m: log(f"  {m.strip()}"))
+        with sin_suspension():
+            datos = pipeline.transcribe(audio, cfg, lambda m: log(f"  {m.strip()}"))
         resultado = construir_resultado(job, datos, carpeta, cfg)
 
         log("  enviando resultado")
@@ -186,6 +189,31 @@ def mostrar_estado() -> int:
         return 0
     finally:
         tunel.cerrar()
+
+
+@contextlib.contextmanager
+def sin_suspension():
+    """Impide que Windows suspenda el equipo mientras se transcribe.
+
+    Solo durante el trabajo: fuera de eso el PC puede dormir con normalidad.
+    Si se suspende a mitad, el trabajo se queda 'procesando' hasta que la Pi
+    lo da por abandonado tres horas despues.
+
+    ES_CONTINUOUS mantiene el estado hasta que se libera; ES_SYSTEM_REQUIRED
+    es lo que evita el apagado. No se usa ES_DISPLAY_REQUIRED: la pantalla
+    puede apagarse, que no estorba.
+    """
+    if sys.platform != "win32":
+        yield
+        return
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
+    kernel32 = ctypes.windll.kernel32
+    try:
+        kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+        yield
+    finally:
+        kernel32.SetThreadExecutionState(ES_CONTINUOUS)
 
 
 def comprobar_entorno() -> str | None:
