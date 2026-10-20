@@ -21,6 +21,13 @@ URL_POR_DEFECTO = "https://reuniones-balbi.duckdns.org:8443"
 
 
 def main() -> int:
+    # El QR se dibuja con caracteres de bloque: sin esto, una consola con la
+    # pagina de codigos antigua o una salida redirigida lo hacen reventar.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
     parser = argparse.ArgumentParser(description="QR de acceso a la app")
     parser.add_argument("--url", default=URL_POR_DEFECTO,
                         help=f"direccion de la app (por defecto {URL_POR_DEFECTO})")
