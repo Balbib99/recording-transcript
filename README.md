@@ -4,7 +4,7 @@ Transcribe grabaciones de reuniones en local (sin enviar nada a internet) y deja
 registrado **quién dice qué y cuándo**.
 
 - **WhisperX** para la transcripción y la alineación palabra a palabra.
-- **pyannote 3.1** para la diarización: separa las voces en `SPEAKER_00`, `SPEAKER_01`…
+- **pyannote** para la diarización: separa las voces en `SPEAKER_00`, `SPEAKER_01`…
 - Tú pones los nombres reales una vez y todas las salidas se regeneran sin volver a
   procesar el audio.
 - Pensado para los `.m4a` de la Grabadora del Pixel, pero traga cualquier formato que
@@ -12,6 +12,43 @@ registrado **quién dice qué y cuándo**.
 
 Cada reunión acaba siendo una carpeta con la transcripción en Markdown, texto plano,
 subtítulos y JSON.
+
+---
+
+## El proyecto tiene dos mitades
+
+**Puedes usar solo la primera.** La segunda convierte lo anterior en un servicio al que
+llegas desde el móvil.
+
+### 1. Herramienta de línea de comandos
+
+Dejas audios en una carpeta, ejecutas `rc process` y obtienes las transcripciones en
+otra. Todo en un solo equipo, sin red. Es lo que cubre este README.
+
+### 2. Servicio con un servidor y un cliente móvil
+
+```
+  Móvil                  Servidor (una Raspberry Pi)          PC con GPU
+┌─────────┐            ┌──────────────────────────┐        ┌───────────────┐
+│  PWA    │──subir────►│  API + cola de trabajos  │◄──pide─│  worker       │
+│         │            │  almacenamiento          │        │  (WhisperX)   │
+│ listado │◄─resultado─│  siempre encendido       │──da───►│  cuando esté  │
+└─────────┘            └──────────────────────────┘        └───────────────┘
+```
+
+Grabas con el móvil, compartes a la app y la transcripción aparece ahí cuando el PC la
+procesa. **El servidor no transcribe**: solo recibe, encola y guarda. El trabajo pesado
+lo hace el equipo con GPU, que pregunta por trabajo cuando está encendido — así no
+necesita puertos abiertos ni estar disponible siempre.
+
+| Pieza | Dónde corre | Documentación |
+|---|---|---|
+| `src/recordingcraft/` | PC | Este README |
+| `server/` — API, cola y PWA | Servidor | [server/README.md](server/README.md) |
+| `worker/` — transcribe y devuelve | PC con GPU | [worker/README.md](worker/README.md) |
+
+Detalles de la instalación concreta (direcciones, operación y resolución de problemas)
+en `docs/servidor-pi/`, que no se publica por contener datos de la red doméstica.
 
 ---
 

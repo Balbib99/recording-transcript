@@ -32,10 +32,27 @@ ssh pi-rcraft "grep RC_API_TOKEN /srv/recordingcraft/app/server/.env"
 
 ## Uso
 
+Lo normal es doble clic en **`INICIAR-WORKER.cmd`** (en la raíz del proyecto): abre su
+consola y se queda procesando lo que llegue. `Ctrl+C` para pararlo.
+
+Desde la terminal, con los atajos:
+
 ```powershell
-.venv\Scripts\python.exe worker\worker.py            # bucle: espera trabajo y lo procesa
-.venv\Scripts\python.exe worker\worker.py --once     # un trabajo y termina
-.venv\Scripts\python.exe worker\worker.py --estado   # qué hay en la cola
+.\worker.cmd                 # bucle: espera trabajo y lo procesa
+.\worker.cmd --once          # un trabajo y termina
+.\worker.cmd --estado        # qué hay en la cola
+```
+
+Y el cliente, para manejar la cola sin tocar el móvil:
+
+```powershell
+.\cliente.cmd lista
+.\cliente.cmd subir "D:\grabaciones\reunion.m4a" --titulo "Reunion"
+.\cliente.cmd ver <id>
+.\cliente.cmd guardar <id>
+.\cliente.cmd hablante <id> SPEAKER_00 Ana Ruiz
+.\cliente.cmd reencolar <id>
+.\cliente.cmd borrar <id>
 ```
 
 Con `--sin-tunel` no abre el túnel, para cuando la API ya es accesible (por ejemplo,
@@ -55,6 +72,27 @@ para el cliente:
 | `texto` | Versión en texto plano |
 
 El móvil no tendrá que renderizar nada: recibe el texto ya hecho.
+
+## Detalles de funcionamiento
+
+**Solo puede haber un worker.** Al arrancar reserva un puerto local como candado; si ya
+hay otro, el segundo se cierra en lugar de competir por la GPU. El candado se libera al
+morir el proceso, pase lo que pase.
+
+**Comprueba su entorno antes de nada.** Si lo lanzas con un Python sin las
+dependencias, lo dice y no arranca. Antes de esto, un worker mal lanzado podía reclamar
+un trabajo y marcarlo como fallido al no poder importar WhisperX.
+
+**Impide que el PC se duerma mientras transcribe.** Una reunión larga son veinte
+minutos sin tocar el teclado, justo lo que tarda Windows en suspenderse; si pasaba a
+mitad, el trabajo se quedaba colgado tres horas. Fuera de la transcripción el equipo
+duerme con normalidad.
+
+**Sobrevive a una suspensión.** Al despertar, el túnel SSH está muerto: lo detecta en
+la siguiente consulta, lo reabre y sigue. Comprobado.
+
+**Deja traza en `worker/worker.log`** si `RC_LOG_FILE` está definido, que es lo que
+permite saber qué pasó cuando corre sin consola a la vista.
 
 ## Si algo falla
 
