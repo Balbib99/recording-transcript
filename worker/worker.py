@@ -15,6 +15,8 @@ usa el CLI.
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import socket
 import sys
 import tempfile
 import time
@@ -24,12 +26,28 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from comun import (  # noqa: E402
-    API_TOKEN, API_URL, ESPERA, RAIZ, WORKER, Tunel, api, esperar_api, log,
-)
+AVISO_ENTORNO = "\n".join([
+    "",
+    "  Este Python no tiene las dependencias del worker.",
+    f"  Estas usando: {sys.executable}",
+    "",
+    "  Lanzalo con el del entorno virtual:",
+    r"    .venv\Scripts\python.exe worker\worker.py",
+    "  o con doble clic en INICIAR-WORKER.cmd",
+    "",
+])
 
-from recordingcraft import outputs, speakers as spk, store  # noqa: E402
-from recordingcraft.config import load_config  # noqa: E402
+try:  # noqa: E402
+    from comun import (
+        API_TOKEN, API_URL, ESPERA, RAIZ, WORKER, Tunel, api, esperar_api, log,
+    )
+    from recordingcraft import outputs, speakers as spk, store
+    from recordingcraft.config import load_config
+except ImportError as _exc:
+    # Lanzado con el Python equivocado: mejor decirlo claro que soltar una
+    # traza de import, porque el sintoma real llega mucho despues.
+    print(f"{AVISO_ENTORNO}  ({_exc})\n")
+    raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------- API
@@ -170,6 +188,39 @@ def mostrar_estado() -> int:
         tunel.cerrar()
 
 
+def comprobar_entorno() -> str | None:
+    """Devuelve un mensaje de error si este Python no puede transcribir.
+
+    Sin esto, un worker lanzado con el Python del sistema reclama trabajos y
+    los marca como fallidos al no encontrar WhisperX. Mejor no arrancar.
+    """
+    if importlib.util.find_spec("whisperx") is None:
+        return "\n".join([
+            "Este Python no tiene WhisperX instalado.",
+            f"          Estas usando: {sys.executable}",
+            "          Lanza el worker con el del entorno virtual:",
+            r"            .venv\Scripts\python.exe worker\worker.py",
+            "          o con doble clic en INICIAR-WORKER.cmd",
+        ])
+    return None
+
+
+def unico_en_marcha() -> socket.socket | None:
+    """Candado de instancia unica: un puerto local que solo puede abrir uno.
+
+    Se libera solo cuando el proceso termina, pase lo que pase, que es mas
+    fiable que un fichero con el PID dentro.
+    """
+    cerrojo = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        cerrojo.bind(("127.0.0.1", 48730))
+        cerrojo.listen(1)
+        return cerrojo
+    except OSError:
+        cerrojo.close()
+        return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Worker de transcripcion de RecordingCraft")
     parser.add_argument("--once", action="store_true", help="procesa un trabajo y termina")
@@ -184,6 +235,16 @@ def main() -> int:
 
     if args.estado:
         return mostrar_estado()
+
+    problema = comprobar_entorno()
+    if problema:
+        log(f"! {problema}")
+        return 1
+
+    cerrojo = unico_en_marcha()
+    if cerrojo is None:
+        log("Ya hay otro worker en marcha: este se cierra para no competir por la GPU.")
+        return 0
 
     cfg = load_config()
     log(f"worker '{WORKER}' contra {API_URL}")
@@ -203,6 +264,7 @@ def main() -> int:
         return 130
     finally:
         tunel.cerrar()
+        cerrojo.close()
 
 
 if __name__ == "__main__":
