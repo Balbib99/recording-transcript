@@ -1,14 +1,14 @@
 /* Service worker: la app abre sin red, conserva lo ultimo leido y recibe las
    grabaciones que se comparten desde la Grabadora del movil. */
 
-const VERSION = 'reuniones-v3';
+const VERSION = 'reuniones-v4';
 const COMPARTIDOS = 'reuniones-compartidos';
 
 const ESQUELETO = [
   './',
   './index.html',
-  './estilos.css',
-  './app.js',
+  './estilos.css?v=4',
+  './app.js?v=4',
   './manifest.webmanifest',
   './iconos/icono-192.png',
   './iconos/icono-512.png',
