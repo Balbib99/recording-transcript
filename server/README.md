@@ -70,6 +70,46 @@ Comprueba:
 curl -s localhost:8000/api/health
 ```
 
+## Despertar el PC desde el móvil
+
+La app muestra si el PC que transcribe está disponible y, si no lo está, un botón para
+encenderlo. Lo dispara siempre el usuario: no hay nada que encienda el PC solo.
+
+| | |
+|---|---|
+| `POST /api/despertar` | Deja la petición en `data/despertar.peticion` |
+| Servicio `despertador` | La recoge cada 2 s y manda el paquete mágico |
+| `GET /api/estado` | Devuelve `worker: {vivo, visto, segundos}` |
+
+**Por qué hay un servicio aparte.** Un contenedor en red puente no puede mandar una
+difusión a la red de casa: Linux no reenvía difusiones dirigidas entre interfaces.
+Comprobado — la API enviaba cuatro paquetes sin un solo error y no llegaba ninguno. El
+`despertador` es el mismo contenedor con `network_mode: host` y otro comando, y sí ve
+la red real. No escucha en ningún puerto; se comunica con la API por un fichero.
+
+**Cómo se sabe que el PC despertó.** El worker deja un latido cada vez que pregunta por
+trabajo, así que la Pi sabe de verdad si está vivo. Tras pulsar, la app consulta cada
+cinco segundos durante dos minutos hasta verlo volver. No es un "enviado" a ciegas.
+
+Requiere `RC_WOL_MAC` en el `.env`, y que la tarjeta de red tenga activado el despertar
+por paquete mágico.
+
+## Desplegar cambios
+
+El código y la web están montados como volúmenes, así que casi nunca hace falta
+reconstruir:
+
+| Qué cambió | Qué hacer |
+|---|---|
+| La web (`web/`) | `git pull` y recargar el navegador |
+| El código (`app/`) | `git pull` + `docker compose restart api` |
+| El `.env` o el compose | `docker compose up -d` |
+| `requirements.txt` | `docker compose up -d --build` |
+
+Ojo con `up -d`: solo recrea los contenedores cuya configuración cambió. Si tocas el
+código y haces `up -d`, Python sigue con el módulo que cargó al arrancar — hace falta
+`restart`.
+
 ## Datos en disco
 
 ```
