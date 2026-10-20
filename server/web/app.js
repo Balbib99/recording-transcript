@@ -104,6 +104,7 @@ function enrutar() {
 
 function pintarLista(datos) {
   const { trabajos, resumen } = datos;
+  pintarEstadoPC(datos.worker);
   const contenedor = $('#lista');
   contenedor.innerHTML = '';
 
@@ -148,7 +149,8 @@ async function cargarLista(silencioso = false) {
       api('/jobs?limite=100'),
       api('/estado'),
     ]);
-    const datos = { trabajos: lista.trabajos, resumen: estado.trabajos };
+    const datos = { trabajos: lista.trabajos, resumen: estado.trabajos,
+                    worker: estado.worker };
     localStorage.setItem(CLAVE_CACHE, JSON.stringify(datos));
     pintarLista(datos);
     enLinea(true);
@@ -173,6 +175,72 @@ function programarRefresco(trabajos) {
   if (hayMovimiento && !document.hidden) {
     temporizador = setTimeout(() => cargarLista(true), 8000);
   }
+}
+
+// ------------------------------------------------------- estado del PC
+
+function hace(segundos) {
+  if (segundos == null) return 'nunca visto';
+  if (segundos < 90) return 'hace un momento';
+  const m = Math.round(segundos / 60);
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `hace ${h} h` : `hace ${Math.round(h / 24)} dias`;
+}
+
+function pintarEstadoPC(worker) {
+  const barra = $('#barra-pc');
+  if (!worker) { barra.classList.add('oculto'); return; }
+  barra.classList.remove('oculto');
+
+  const punto = $('#punto-pc');
+  punto.className = `punto-pc ${worker.vivo ? 'vivo' : 'dormido'}`;
+  $('#texto-pc').textContent = worker.vivo
+    ? `PC en marcha${worker.nombre ? ` (${worker.nombre})` : ''}`
+    : `PC no disponible · ${hace(worker.segundos)}`;
+
+  // El boton solo aparece si hace falta y si la Pi sabe a quien despertar.
+  $('#boton-despertar').classList.toggle(
+    'oculto', worker.vivo || !worker.puede_despertarse);
+}
+
+async function despertarPC() {
+  const boton = $('#boton-despertar');
+  boton.disabled = true;
+  boton.textContent = 'Enviando...';
+  try {
+    const r = await api('/despertar', { method: 'POST' });
+    if (r.enviado) {
+      avisar('Paquete enviado. El PC deberia encenderse en un minuto');
+      esperarAlPC();
+    } else {
+      avisar(r.motivo || 'No hizo falta');
+      cargarLista(true);
+    }
+  } catch (e) {
+    avisar('No se pudo enviar la senal', true);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = 'Despertar';
+  }
+}
+
+/* Tras pulsar, se consulta mas a menudo durante dos minutos: la gracia del
+   mando es ver confirmado que el PC ha despertado, no fiarse del envio. */
+function esperarAlPC(intentos = 24) {
+  if (intentos <= 0) return;
+  setTimeout(async () => {
+    try {
+      const estado = await api('/estado');
+      pintarEstadoPC(estado.worker);
+      if (estado.worker?.vivo) {
+        avisar('El PC ya esta en marcha');
+        cargarLista(true);
+        return;
+      }
+    } catch (e) { /* sin red: se reintenta */ }
+    esperarAlPC(intentos - 1);
+  }, 5000);
 }
 
 // ----------------------------------------------------------------- subida
@@ -396,6 +464,7 @@ $('#campo-fichero').addEventListener('change', (e) => {
 });
 
 $('#boton-recargar').addEventListener('click', () => cargarLista());
+$('#boton-despertar').addEventListener('click', despertarPC);
 $('#boton-volver').addEventListener('click', () => { location.hash = ''; });
 
 $('#boton-copiar').addEventListener('click', async () => {

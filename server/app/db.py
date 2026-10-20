@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_estado ON jobs(estado, creado);
 CREATE INDEX IF NOT EXISTS idx_jobs_sha    ON jobs(sha256);
+
+CREATE TABLE IF NOT EXISTS estado (
+    clave      TEXT PRIMARY KEY,
+    valor      TEXT,
+    actualizado TEXT NOT NULL
+);
 """
 
 ESTADOS = ("pendiente", "procesando", "hecho", "fallido")
@@ -138,6 +144,25 @@ def actualizar(job_id: str, **campos: Any) -> dict[str, Any] | None:
             [*cambios.values(), job_id],
         )
     return obtener_job(job_id)
+
+
+def anotar(clave: str, valor: str) -> None:
+    """Guarda un dato suelto con su marca de tiempo (el latido del worker)."""
+    with conexion() as con:
+        con.execute(
+            "INSERT INTO estado (clave, valor, actualizado) VALUES (?,?,?)"
+            " ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor,"
+            " actualizado=excluded.actualizado",
+            (clave, valor, ahora()),
+        )
+
+
+def leer_anotacion(clave: str) -> dict[str, Any] | None:
+    with conexion() as con:
+        fila = con.execute(
+            "SELECT valor, actualizado FROM estado WHERE clave = ?", (clave,)
+        ).fetchone()
+    return {"valor": fila["valor"], "actualizado": fila["actualizado"]} if fila else None
 
 
 def reclamar_siguiente(worker: str) -> dict[str, Any] | None:

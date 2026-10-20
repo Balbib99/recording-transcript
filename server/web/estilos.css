@@ -125,6 +125,41 @@ button, .principal {
 
 /* --------------------------------------------------------------- listado */
 
+/* Estado del PC que transcribe, con su mando a distancia */
+.barra-pc {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  font-size: .85rem;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+.punto-pc {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--apagado);
+}
+.punto-pc.vivo { background: var(--acento); }
+.punto-pc.dormido { background: var(--aviso); }
+#texto-pc { flex: 1; }
+
+.despertar {
+  padding: 7px 14px;
+  font-size: .8rem;
+  font-weight: 650;
+  background: var(--superficie-alta);
+  color: var(--texto);
+  border: 1px solid var(--acento);
+  border-radius: 99px;
+}
+.despertar:active { background: var(--acento); color: #06100d; }
+.despertar[disabled] { opacity: .5; border-color: var(--borde); }
+
 .resumen {
   padding: 12px 16px 0;
   font-size: .85rem;

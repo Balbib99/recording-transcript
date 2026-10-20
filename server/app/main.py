@@ -6,6 +6,7 @@ el worker del PC en la fase siguiente, pidiendo trabajo a esta misma API.
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import re
@@ -21,7 +22,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import config, db, render
+from app import config, db, render, wol
 
 
 @asynccontextmanager
@@ -98,11 +99,48 @@ def salud() -> dict[str, Any]:
     return {"ok": True, "version": app.version}
 
 
+def estado_del_worker() -> dict[str, Any]:
+    """Si el worker ha preguntado hace poco, el PC esta encendido."""
+    visto = db.leer_anotacion("worker_visto")
+    if not visto:
+        return {"visto": None, "nombre": None, "segundos": None, "vivo": False,
+                "puede_despertarse": bool(config.WOL_MAC)}
+    marca = dt.datetime.fromisoformat(visto["actualizado"])
+    segundos = int((dt.datetime.now(dt.timezone.utc) - marca).total_seconds())
+    return {
+        "visto": visto["actualizado"],
+        "nombre": visto["valor"],
+        "segundos": segundos,
+        "vivo": segundos <= config.WORKER_VIVO,
+        "puede_despertarse": bool(config.WOL_MAC),
+    }
+
+
 @app.get("/api/estado", dependencies=[Protegido])
 def estado() -> dict[str, Any]:
     conteo = db.contar_por_estado()
     uso = sum(f.stat().st_size for f in config.AUDIO_DIR.glob("*") if f.is_file())
-    return {"trabajos": conteo, "bytes_en_disco": uso}
+    return {"trabajos": conteo, "bytes_en_disco": uso, "worker": estado_del_worker()}
+
+
+@app.post("/api/despertar", dependencies=[Protegido])
+def despertar() -> dict[str, Any]:
+    """Manda el paquete magico al PC del worker. Lo dispara el usuario, nadie mas."""
+    if not config.WOL_MAC:
+        raise HTTPException(
+            status_code=409,
+            detail="No hay MAC configurada: pon RC_WOL_MAC en el .env del servidor",
+        )
+    actual = estado_del_worker()
+    if actual["vivo"]:
+        return {"enviado": False, "motivo": "el worker ya esta en marcha",
+                "worker": actual}
+    try:
+        enviados, errores = wol.enviar(config.WOL_MAC, config.WOL_DIFUSIONES)
+    except wol.WolError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"enviado": True, "destinos": enviados, "errores": errores,
+            "worker": actual}
 
 
 @app.post("/api/jobs", status_code=status.HTTP_201_CREATED, dependencies=[Protegido])
@@ -227,7 +265,10 @@ def reclamar(worker: Annotated[str, Form()] = "worker") -> dict[str, Any]:
     hacer" es la respuesta normal, no un error: el worker pregunta cada pocos
     segundos.
     """
-    job = db.reclamar_siguiente(worker.strip()[:60] or "worker")
+    nombre = worker.strip()[:60] or "worker"
+    # Cada consulta es un latido: con esto la app sabe si el PC esta vivo.
+    db.anotar("worker_visto", nombre)
+    job = db.reclamar_siguiente(nombre)
     if job is None:
         return {"trabajo": None}
     return {"trabajo": {**publico(job), "sha256": job["sha256"],
