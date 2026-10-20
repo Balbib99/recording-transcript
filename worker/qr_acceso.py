@@ -45,8 +45,12 @@ def main() -> int:
 
     print()
     codigo.print_ascii(invert=True)
+    print(f"  El codigo lleva la direccion Y el token ({len(destino)} caracteres).")
+    print("  El token no se imprime aqui a proposito; va dentro del QR.")
+    print()
+    print(f"  Destino: {args.url}/?token=<los 64 caracteres del .env>")
     print("  Escanealo con la camara del movil, con WireGuard conectado.")
-    print(f"  Apunta a {args.url} y entra solo, sin teclear el token.")
+    print("  Si entras directo a la lista, el token se guardo. Si te la pide, no llego.")
     print()
     return 0
 
