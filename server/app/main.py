@@ -135,12 +135,17 @@ def despertar() -> dict[str, Any]:
     if actual["vivo"]:
         return {"enviado": False, "motivo": "el worker ya esta en marcha",
                 "worker": actual}
+    # El paquete no se manda desde aqui: un contenedor en red puente no puede
+    # difundir a la red de casa. Lo hace el servicio "despertador", que corre
+    # con la red del host y recoge esta peticion del disco compartido.
     try:
-        enviados, errores = wol.enviar(config.WOL_MAC, config.WOL_DIFUSIONES)
-    except wol.WolError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    return {"enviado": True, "destinos": enviados, "errores": errores,
-            "worker": actual}
+        config.crear_directorios()
+        (config.DATA_DIR / "despertar.peticion").write_text(
+            f"app {db.ahora()}", encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo pedir el encendido: {exc}")
+
+    return {"enviado": True, "worker": actual}
 
 
 @app.post("/api/jobs", status_code=status.HTTP_201_CREATED, dependencies=[Protegido])

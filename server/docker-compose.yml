@@ -50,6 +50,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Mando a distancia: unico proceso capaz de mandar el paquete magico a la
+  # red real, porque usa la red del host. No escucha en ningun puerto; recoge
+  # las peticiones que la API deja en la carpeta de datos compartida.
+  despertador:
+    build: .
+    image: recordingcraft-api
+    container_name: recordingcraft-despertador
+    restart: unless-stopped
+    env_file: .env
+    network_mode: host
+    user: "1001:1001"
+    command: ["python", "-m", "app.despertador"]
+    volumes:
+      - ${RC_DATA_HOST:-./data}:/data
+      - ./app:/srv/app:ro
+    depends_on:
+      - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 networks:
   edge:
     external: true
