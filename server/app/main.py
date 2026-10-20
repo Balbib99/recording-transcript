@@ -44,6 +44,23 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def sin_cache_en_la_web(request, call_next):
+    """Obliga al navegador a preguntar siempre antes de reusar la interfaz.
+
+    Sin esto, el servidor no decia nada sobre caducidad y cada navegador
+    decidia por su cuenta cuanto guardarse el HTML, el CSS y el script. De ahi
+    venian las versiones viejas que no se iban ni a tiros.
+
+    "no-cache" no significa no guardar: significa guardar pero revalidar. Con
+    el ETag, si no ha cambiado nada la respuesta es un 304 de unos pocos bytes.
+    """
+    respuesta = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        respuesta.headers.setdefault("Cache-Control", "no-cache")
+    return respuesta
+
+
 # ------------------------------------------------------------- autenticacion
 
 def exigir_token(authorization: Annotated[str | None, Header()] = None) -> None:
