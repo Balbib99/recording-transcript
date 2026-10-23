@@ -34,12 +34,6 @@ const reloj = (s) => {
            : `${m}:${String(seg).padStart(2, '0')}`;
 };
 
-const duracion = (s) => {
-  if (!s) return '';
-  const m = Math.round(s / 60);
-  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
-};
-
 const fecha = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -60,8 +54,12 @@ function avisar(texto, malo = false) {
   avisar._t = setTimeout(() => el.classList.add('oculto'), 3500);
 }
 
+/* La Pi no tiene un estado propio que consultar: si la peticion ha llegado,
+   esta viva. Por eso el indicador de conexion es tambien su celda. */
 function enLinea(si) {
-  $('#indicador').classList.toggle('sin-red', !si);
+  $('#indicador')?.classList.toggle('sin-red', !si);
+  const pi = $('#texto-pi');
+  if (pi) pi.textContent = si ? 'activa' : 'sin conexión';
 }
 
 // -------------------------------------------------------------------- API
@@ -90,6 +88,10 @@ function mostrar(vista) {
 }
 
 function enrutar() {
+  // Un dialogo abierto no se entera de que cambia la pantalla: al volver atras
+  // con el boton del movil se quedaba flotando encima de otra reunion.
+  for (const dialogo of document.querySelectorAll('dialog[open]')) dialogo.close();
+
   if (!token) { mostrar('token'); return; }
   const ruta = location.hash.slice(1);
   if (ruta.startsWith('/j/')) {
@@ -102,44 +104,126 @@ function enrutar() {
 
 // ---------------------------------------------------------------- listado
 
+const ETIQUETA_ESTADO = {
+  pendiente: 'En cola',
+  procesando: 'Transcribiendo',
+  hecho: 'Lista',
+  fallido: 'Fallo',
+};
+
 function pintarLista(datos) {
   const { trabajos, resumen } = datos;
   pintarEstadoPC(datos.worker);
   const contenedor = $('#lista');
   contenedor.innerHTML = '';
 
+  const total = trabajos.length;
+  $('#resumen').textContent = `${total} grabación${total === 1 ? '' : 'es'}`;
+
   if (resumen) {
-    const pendientes = resumen.pendiente + resumen.procesando;
-    $('#resumen').textContent = pendientes
-      ? `${pendientes} en cola · ${resumen.hecho} listas`
-      : `${resumen.hecho} transcripcion${resumen.hecho === 1 ? '' : 'es'}`;
+    const enEspera = resumen.pendiente + resumen.procesando;
+    if (enEspera) {
+      $('#resumen').textContent += ` · ${enEspera} en cola`;
+    }
+    $('#texto-cola').textContent = enEspera
+      ? String(enEspera)
+      : 'vacía';
   }
 
-  $('#lista-vacia').classList.toggle('oculto', trabajos.length > 0);
+  $('#lista-vacia').classList.toggle('oculto', total > 0);
 
-  for (const t of trabajos) {
-    const tarjeta = document.createElement('button');
-    tarjeta.className = 'tarjeta';
-    tarjeta.onclick = () => { location.hash = `/j/${t.id}`; };
+  for (const t of trabajos) contenedor.append(tarjetaDe(t));
+}
 
-    const partes = [fecha(t.creado)];
-    if (t.duracion) partes.push(duracion(t.duracion));
-    if (t.hablantes) partes.push(`${t.hablantes} ${t.hablantes === 1 ? 'voz' : 'voces'}`);
-    if (t.estado === 'fallido' && t.error) partes.push(t.error.slice(0, 60));
+function tarjetaDe(t) {
+  const roto = t.estado === 'fallido';
 
-    tarjeta.innerHTML = `
-      <h2>
-        <span class="titulo"></span>
-        <span class="estado ${t.estado}">${t.estado}</span>
-      </h2>
-      <div class="meta"></div>`;
-    tarjeta.querySelector('.titulo').textContent = t.titulo || t.fichero;
-    for (const p of partes) {
-      const span = document.createElement('span');
-      span.textContent = p;
-      tarjeta.querySelector('.meta').append(span);
-    }
-    contenedor.append(tarjeta);
+  // La tarjeta fallida lleva dentro su boton de reintentar, y un boton dentro
+  // de otro no es HTML valido: se queda como caja y se entra por el titulo.
+  const caja = document.createElement(roto ? 'div' : 'button');
+  caja.className = `tarjeta${roto ? ' rota' : ''}`;
+  if (!roto) {
+    caja.type = 'button';
+    caja.onclick = () => { location.hash = `/j/${t.id}`; };
+  }
+
+  const cabecera = document.createElement('h2');
+  const titulo = document.createElement(roto ? 'a' : 'span');
+  titulo.className = 'titulo';
+  titulo.textContent = t.titulo || t.fichero;
+  if (roto) titulo.href = `#/j/${t.id}`;
+  const estado = document.createElement('span');
+  estado.className = `estado ${t.estado}`;
+  estado.textContent = ETIQUETA_ESTADO[t.estado] || t.estado;
+  cabecera.append(titulo, estado);
+  caja.append(cabecera);
+
+  const partes = [];
+  // La duracion no se sabe hasta que esta transcrita: hasta entonces, el peso
+  // del fichero es lo unico que dice si es una reunion larga o una nota.
+  if (t.duracion) partes.push(reloj(t.duracion));
+  else if (t.bytes) partes.push(`${(t.bytes / 1e6).toFixed(1)} MB`);
+  if (t.hablantes) partes.push(`${t.hablantes} ${t.hablantes === 1 ? 'voz' : 'voces'}`);
+  if (t.idioma) partes.push(t.idioma);
+  partes.push(fecha(t.creado));
+  const meta = document.createElement('div');
+  meta.className = 'meta-mono';
+  meta.textContent = partes.filter(Boolean).join(' · ');
+  caja.append(meta);
+
+  if (t.estado === 'procesando') {
+    const avance = document.createElement('div');
+    avance.className = 'avance';
+    avance.append(document.createElement('span'));
+    caja.append(avance);
+  }
+
+  if (roto) {
+    const motivo = document.createElement('div');
+    motivo.className = 'motivo';
+    motivo.textContent = (t.error || 'motivo desconocido').slice(0, 140);
+    const reintentar = document.createElement('button');
+    reintentar.type = 'button';
+    reintentar.className = 'reintentar';
+    reintentar.textContent = 'Volver a la cola';
+    reintentar.onclick = () => reencolar(t.id);
+    caja.append(motivo, reintentar);
+  } else if (t.voces?.length) {
+    caja.append(filaDeVoces(t.voces));
+  }
+
+  return caja;
+}
+
+/* Las iniciales de cada voz y cuantas siguen sin nombre: desde la lista ya se
+   ve que reuniones estan a medio terminar, sin abrirlas una por una. */
+function filaDeVoces(voces) {
+  const fila = document.createElement('div');
+  fila.className = 'voces-mini';
+
+  voces.forEach((nombre, i) => {
+    const circulo = document.createElement('span');
+    circulo.className = nombre ? `inicial voz-${i % 6}` : 'inicial';
+    circulo.textContent = nombre ? (nombre.trim()[0] || '?').toUpperCase() : '?';
+    fila.append(circulo);
+  });
+
+  const sinNombre = voces.filter((n) => !n).length;
+  const cuenta = document.createElement('span');
+  cuenta.className = 'voces-cuenta';
+  cuenta.textContent = sinNombre ? `${sinNombre} sin nombre` : 'todas nombradas';
+  fila.append(cuenta);
+
+  return fila;
+}
+
+async function reencolar(id) {
+  try {
+    await api(`/jobs/${id}/reencolar`, { method: 'POST' });
+    avisar('De vuelta en la cola');
+    cargarLista(true);
+  } catch (e) {
+    avisar('No se pudo devolver a la cola', true);
   }
 }
 
@@ -160,7 +244,7 @@ async function cargarLista(silencioso = false) {
     const guardado = localStorage.getItem(CLAVE_CACHE);
     if (guardado) {
       pintarLista(JSON.parse(guardado));
-      if (!silencioso) avisar('Sin conexion: mostrando lo ultimo guardado');
+      if (!silencioso) avisar('Sin conexión: mostrando lo último guardado');
     } else if (!silencioso) {
       avisar('No se pudo conectar con el servidor', true);
     }
@@ -189,7 +273,7 @@ function pedirAjustes(fichero = null, job = null) {
   $('#ajustes-titulo').textContent = subiendo ? 'Antes de subir' : 'Ajustes';
   $('#ajustes-fichero').textContent = subiendo
     ? `${fichero.name} · ${(fichero.size / 1e6).toFixed(1)} MB`
-    : 'Se aplicaran cuando el worker la coja';
+    : 'Se aplicarán cuando el worker la coja';
   $('#ajustes-aceptar').textContent = subiendo ? 'Subir' : 'Guardar';
 
   $('#campo-titulo').value = subiendo
@@ -254,43 +338,52 @@ function hace(segundos) {
   const m = Math.round(segundos / 60);
   if (m < 60) return `hace ${m} min`;
   const h = Math.round(m / 60);
-  return h < 48 ? `hace ${h} h` : `hace ${Math.round(h / 24)} dias`;
+  return h < 48 ? `hace ${h} h` : `hace ${Math.round(h / 24)} días`;
 }
 
 function pintarEstadoPC(worker) {
-  const barra = $('#barra-pc');
-  if (!worker) { barra.classList.add('oculto'); return; }
-  barra.classList.remove('oculto');
-
   const punto = $('#punto-pc');
+  const texto = $('#texto-pc');
+  if (!punto || !texto) return;
+
+  if (!worker) {
+    punto.className = 'punto-pc';
+    texto.textContent = 'sin datos';
+    return;
+  }
+
+  // La celda es estrecha, asi que cuando el PC no responde dice desde cuando,
+  // que es el dato util: el punto ambar y el boton de abajo ya dicen el resto.
   punto.className = `punto-pc ${worker.vivo ? 'vivo' : 'dormido'}`;
-  $('#texto-pc').textContent = worker.vivo
-    ? `PC en marcha${worker.nombre ? ` (${worker.nombre})` : ''}`
-    : `PC no disponible · ${hace(worker.segundos)}`;
+  texto.textContent = worker.vivo ? 'en marcha' : hace(worker.segundos);
+  texto.title = worker.vivo
+    ? `El worker ${worker.nombre || ''} esta pidiendo trabajo`.trim()
+    : 'El worker no da señales de vida';
 
   // El boton solo aparece si hace falta y si la Pi sabe a quien despertar.
-  $('#boton-despertar').classList.toggle(
+  $('#boton-despertar')?.classList.toggle(
     'oculto', worker.vivo || !worker.puede_despertarse);
 }
 
 async function despertarPC() {
   const boton = $('#boton-despertar');
+  const etiqueta = $('#etiqueta-despertar');
   boton.disabled = true;
-  boton.textContent = 'Enviando...';
+  if (etiqueta) etiqueta.textContent = 'Enviando...';
   try {
     const r = await api('/despertar', { method: 'POST' });
     if (r.enviado) {
-      avisar('Paquete enviado. El PC deberia encenderse en un minuto');
+      avisar('Paquete enviado. El PC debería encenderse en un minuto');
       esperarAlPC();
     } else {
       avisar(r.motivo || 'No hizo falta');
       cargarLista(true);
     }
   } catch (e) {
-    avisar('No se pudo enviar la senal', true);
+    avisar('No se pudo enviar la señal', true);
   } finally {
     boton.disabled = false;
-    boton.textContent = 'Despertar';
+    if (etiqueta) etiqueta.textContent = 'Despertar el PC';
   }
 }
 
@@ -303,7 +396,7 @@ function esperarAlPC(intentos = 24) {
       const estado = await api('/estado');
       pintarEstadoPC(estado.worker);
       if (estado.worker?.vivo) {
-        avisar('El PC ya esta en marcha');
+        avisar('El PC ya está en marcha');
         cargarLista(true);
         return;
       }
@@ -342,7 +435,7 @@ function subir(fichero, titulo = null, extras = {}) {
     $('#progreso-relleno').style.width = '0';
     if (peticion.status === 201) {
       const job = JSON.parse(peticion.responseText);
-      avisar(job.duplicado ? 'Esa grabacion ya estaba subida' : 'Subida. Esperando al worker');
+      avisar(job.duplicado ? 'Esa grabación ya estaba subida' : 'Subida. Esperando al worker');
       cargarLista(true);
     } else if (peticion.status === 401) {
       localStorage.removeItem(CLAVE_TOKEN); token = ''; mostrar('token');
@@ -379,13 +472,18 @@ async function abrirDetalle(id) {
   $('#detalle-titulo').textContent = job.titulo || job.fichero;
 
   if (job.estado !== 'hecho') {
+    caja.innerHTML = '';
+    caja.append(...encabezado(job));
+
     const mensajes = {
-      pendiente: 'En cola. Se transcribira cuando el worker este encendido.',
+      pendiente: 'En cola. Se transcribirá cuando el worker esté encendido.',
       procesando: 'Transcribiendo ahora mismo...',
       fallido: `Fallo: ${job.error || 'motivo desconocido'}`,
     };
-    caja.innerHTML = `<p class="${job.estado === 'fallido' ? 'error' : 'apagado'}"></p>`;
-    caja.querySelector('p').textContent = mensajes[job.estado] || job.estado;
+    const parrafo = document.createElement('p');
+    parrafo.className = job.estado === 'fallido' ? 'error' : 'apagado';
+    parrafo.textContent = mensajes[job.estado] || job.estado;
+    caja.append(parrafo);
 
     // Mientras espera todavia se puede afinar: cuanta gente habla y que
     // palabras raras van a salir. Despues ya no sirve de nada.
@@ -394,7 +492,7 @@ async function abrirDetalle(id) {
       resumen.className = 'ficha';
       for (const [clave, valor] of [
         ['Personas', job.esperados || 'las que detecte'],
-        ['Vocabulario', job.vocabulario || 'ninguno'],
+        ['Vocabulario', job.vocabulario || 'el general del config.toml'],
       ]) {
         const dt = document.createElement('dt'); dt.textContent = clave;
         const dd = document.createElement('dd'); dd.textContent = valor;
@@ -406,6 +504,15 @@ async function abrirDetalle(id) {
       boton.onclick = () => pedirAjustes(null, job);
       caja.append(resumen, boton);
     }
+
+    if (job.estado === 'fallido') {
+      const boton = document.createElement('button');
+      boton.className = 'principal';
+      boton.style.marginTop = '16px';
+      boton.textContent = 'Volver a la cola';
+      boton.onclick = () => { reencolar(job.id); location.hash = ''; };
+      caja.append(boton);
+    }
     return;
   }
 
@@ -413,7 +520,7 @@ async function abrirDetalle(id) {
   try {
     datos = await api(`/jobs/${id}/transcripcion`);
   } catch {
-    caja.innerHTML = '<p class="error">No se pudo cargar la transcripcion</p>';
+    caja.innerHTML = '<p class="error">No se pudo cargar la transcripción</p>';
     return;
   }
   caja.dataset.texto = datos.texto || '';
@@ -421,64 +528,127 @@ async function abrirDetalle(id) {
   pintarDetalle(caja, job, datos);
 }
 
-function pintarDetalle(caja, job, datos) {
-  caja.innerHTML = '';
+/* Titulo grande y fecha, lo mismo para una reunion hecha que para una que
+   todavia espera. En la barra de arriba solo cabe el titulo recortado. */
+function encabezado(job) {
+  const titulo = document.createElement('h2');
+  titulo.className = 'detalle-titulo';
+  titulo.textContent = job.titulo || job.fichero;
+  const cuando = document.createElement('div');
+  cuando.className = 'detalle-fecha';
+  cuando.textContent = fecha(job.creado);
+  return [titulo, cuando];
+}
 
-  const ficha = document.createElement('dl');
-  ficha.className = 'ficha';
-  const filas = [
-    ['Grabado', fecha(job.creado)],
-    ['Duracion', duracion(datos.duracion) || reloj(datos.duracion)],
+/* La ficha tecnica: con que se transcribio y cuanto costo. Al final, el
+   vocabulario que se aplico, que explica por que salio lo que salio. */
+function fichaTecnica(job, datos) {
+  const ficha = document.createElement('div');
+  ficha.className = 'datos';
+
+  const rejilla = document.createElement('div');
+  rejilla.className = 'datos-rejilla';
+  const celdas = [
+    ['Duración', reloj(datos.duracion) || '-'],
+    ['Voces', String((datos.hablantes || []).length || '-')],
     ['Idioma', datos.idioma || '-'],
     ['Modelo', datos.modelo || '-'],
+    ['Proceso', datos.segundos_de_proceso ? reloj(datos.segundos_de_proceso) : '-'],
+    ['Equipo', datos.procesado_por || '-'],
   ];
-  for (const [clave, valor] of filas) {
-    const dt = document.createElement('dt'); dt.textContent = clave;
-    const dd = document.createElement('dd'); dd.textContent = valor;
-    ficha.append(dt, dd);
+  for (const [clave, valor] of celdas) {
+    const celda = document.createElement('div');
+    celda.className = 'dato';
+    const nombre = document.createElement('span');
+    nombre.className = 'dato-clave';
+    nombre.textContent = clave;
+    const caja = document.createElement('span');
+    caja.className = 'dato-valor';
+    const dentro = document.createElement('span');
+    dentro.textContent = valor;
+    caja.append(dentro);
+    celda.append(nombre, caja);
+    rejilla.append(celda);
   }
-  caja.append(ficha);
 
-  // Asignar un color estable a cada hablante segun su orden
+  const vocabulario = document.createElement('div');
+  vocabulario.className = 'dato-ancho';
+  const clave = document.createElement('span');
+  clave.className = 'dato-clave';
+  clave.textContent = 'Vocabulario';
+  const valor = document.createElement('span');
+  valor.className = 'dato-valor';
+  const terminos = (job.vocabulario || '').split(',').map((t) => t.trim()).filter(Boolean);
+  valor.textContent = terminos.length
+    ? terminos.join(' · ')
+    : 'solo el general del config.toml';
+  vocabulario.append(clave, valor);
+
+  ficha.append(rejilla, vocabulario);
+  return ficha;
+}
+
+function pintarDetalle(caja, job, datos) {
+  caja.innerHTML = '';
+  caja.append(...encabezado(job), fichaTecnica(job, datos));
+
+  // Un color estable por voz, segun su orden en la reunion
   const colorDe = new Map();
-  (datos.hablantes || []).forEach((h, i) => colorDe.set(h.etiqueta, `hablante-${i % 6}`));
+  (datos.hablantes || []).forEach((h, i) => colorDe.set(h.etiqueta, i % 6));
 
   if (datos.hablantes?.length) {
     const fila = document.createElement('div');
     fila.className = 'hablantes';
     for (const h of datos.hablantes) {
-      const chip = document.createElement('button');
       const sinNombrar = h.nombre === h.etiqueta;
+      const chip = document.createElement('button');
+      chip.type = 'button';
       chip.className = `chip editable${sinNombrar ? ' sin-nombrar' : ''}`;
       chip.title = 'Tocar para poner el nombre';
-      const nombre = document.createElement('b');
-      nombre.className = colorDe.get(h.etiqueta);
-      nombre.textContent = h.nombre;
-      chip.append(nombre, ` ${reloj(h.segundos)} · ${h.intervenciones}`);
+
+      const inicial = document.createElement('span');
+      inicial.className = sinNombrar
+        ? 'inicial' : `inicial voz-${colorDe.get(h.etiqueta) ?? 0}`;
+      inicial.textContent = sinNombrar
+        ? '?' : (h.nombre.trim()[0] || '?').toUpperCase();
+
+      const nombre = document.createElement('span');
+      nombre.textContent = sinNombrar ? 'Ponle nombre' : h.nombre;
+
+      const tiempo = document.createElement('span');
+      tiempo.className = 'tiempo';
+      tiempo.textContent = reloj(h.segundos);
+
+      chip.append(inicial, nombre, tiempo);
       chip.onclick = () => pedirNombre(h);
       fila.append(chip);
     }
     caja.append(fila);
   }
 
+  const transcripcion = document.createElement('div');
+  transcripcion.className = 'transcripcion';
   for (const t of datos.turnos || []) {
     const bloque = document.createElement('article');
     bloque.className = 'turno';
-    const cabecera = document.createElement('div');
-    cabecera.className = 'turno-cabecera';
-    const quien = document.createElement('span');
-    quien.className = `turno-hablante ${colorDe.get(t.hablante) || ''}`;
-    quien.textContent = (datos.hablantes || []).find((h) => h.etiqueta === t.hablante)?.nombre
-                        || t.hablante;
-    const cuando = document.createElement('span');
+
+    const cuando = document.createElement('div');
     cuando.className = 'turno-tiempo';
     cuando.textContent = reloj(t.inicio);
-    cabecera.append(quien, cuando);
+
+    const cuerpo = document.createElement('div');
+    const quien = document.createElement('div');
+    quien.className = `turno-hablante hablante-${colorDe.get(t.hablante) ?? 0}`;
+    quien.textContent = (datos.hablantes || []).find((h) => h.etiqueta === t.hablante)?.nombre
+                        || t.hablante;
     const parrafo = document.createElement('p');
     parrafo.textContent = t.texto;
-    bloque.append(cabecera, parrafo);
-    caja.append(bloque);
+    cuerpo.append(quien, parrafo);
+
+    bloque.append(cuando, cuerpo);
+    transcripcion.append(bloque);
   }
+  caja.append(transcripcion);
 }
 
 // ------------------------------------------------- renombrar hablantes
@@ -492,7 +662,7 @@ function primeraFraseDe(etiqueta) {
 
 function pedirNombre(hablante) {
   const dialogo = $('#dialogo-hablante');
-  $('#dialogo-titulo').textContent = `Quien es ${hablante.etiqueta}?`;
+  $('#dialogo-titulo').textContent = `¿Quién es ${hablante.etiqueta}?`;
   $('#dialogo-pista').textContent = primeraFraseDe(hablante.etiqueta)
     || `${reloj(hablante.segundos)} hablando, ${hablante.intervenciones} intervenciones`;
   const campo = $('#campo-nombre');
@@ -568,7 +738,7 @@ $('#boton-copiar')?.addEventListener('click', async () => {
   if (!texto) return avisar('Nada que copiar');
   try {
     await navigator.clipboard.writeText(texto);
-    avisar('Transcripcion copiada');
+    avisar('Transcripción copiada');
   } catch {
     avisar('El navegador no deja copiar', true);
   }
@@ -587,7 +757,7 @@ async function recogerCompartido() {
     + (parametros.toString() ? `?${parametros}` : '') + location.hash);
 
   if (clave === 'vacio' || clave === 'error') {
-    avisar('No se pudo leer la grabacion compartida', true);
+    avisar('No se pudo leer la grabación compartida', true);
     return;
   }
   if (!token) {
@@ -598,7 +768,7 @@ async function recogerCompartido() {
   try {
     const cache = await caches.open('reuniones-compartidos');
     const guardado = await cache.match(clave);
-    if (!guardado) return avisar('La grabacion compartida ya no esta', true);
+    if (!guardado) return avisar('La grabación compartida ya no está', true);
 
     const datos = await guardado.blob();
     const nombre = decodeURIComponent(guardado.headers.get('X-Nombre') || 'grabacion');
@@ -608,7 +778,7 @@ async function recogerCompartido() {
     subir(new File([datos], conExtension(nombre, datos.type), { type: datos.type }),
           titulo || null);
   } catch (e) {
-    avisar('Fallo al recoger la grabacion compartida', true);
+    avisar('Fallo al recoger la grabación compartida', true);
   }
 }
 

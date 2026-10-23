@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0e1116">
+<meta name="theme-color" content="#f4f6f8">
 <meta name="description" content="Transcripciones de reuniones">
 <title>Reuniones</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="iconos/icono-192.png">
 <link rel="apple-touch-icon" href="iconos/icono-192.png">
-<link rel="stylesheet" href="estilos.css?v=4">
+<link rel="stylesheet" href="estilos.css?v=5">
 </head>
 <body>
 
@@ -32,29 +32,63 @@
 <!-- Listado de reuniones -->
 <section id="vista-lista" class="vista oculto">
   <header class="barra">
-    <h1>Reuniones</h1>
-    <div class="acciones">
-      <span id="indicador" class="punto" title="Estado de la conexion"></span>
-      <button id="boton-recargar" class="icono" aria-label="Recargar">&#8635;</button>
+    <div class="barra-titulo">
+      <h1>Reuniones</h1>
+      <div id="resumen" class="resumen"></div>
     </div>
+    <button id="boton-recargar" class="icono" aria-label="Recargar la lista">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-3.3-6.9"></path><path d="M21 3.5V9h-5.4"></path>
+      </svg>
+    </button>
   </header>
 
-  <div id="barra-pc" class="barra-pc oculto">
-    <span class="punto-pc" id="punto-pc"></span>
-    <span id="texto-pc" class="apagado"></span>
-    <button id="boton-despertar" class="despertar oculto">Despertar</button>
+  <!-- La maquinaria: la Pi que guarda la cola, el PC que transcribe y lo que
+       queda por hacer. El mando de encendido va cosido debajo. -->
+  <div id="barra-pc" class="panel">
+    <div class="panel-datos">
+      <div class="dato">
+        <span class="dato-clave">Pi</span>
+        <span class="dato-valor">
+          <span id="indicador" class="punto" title="Estado de la conexión"></span>
+          <span id="texto-pi">activa</span>
+        </span>
+      </div>
+      <div class="dato">
+        <span class="dato-clave">PC</span>
+        <span class="dato-valor">
+          <span id="punto-pc" class="punto-pc"></span>
+          <span id="texto-pc">-</span>
+        </span>
+      </div>
+      <div class="dato">
+        <span class="dato-clave">Cola</span>
+        <span class="dato-valor"><span id="texto-cola">-</span></span>
+      </div>
+    </div>
+    <button id="boton-despertar" class="panel-accion oculto">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 3v9"></path><path d="M7.5 6.3a7.5 7.5 0 1 0 9 0"></path>
+      </svg>
+      <span id="etiqueta-despertar">Despertar el PC</span>
+    </button>
   </div>
 
-  <div id="resumen" class="resumen"></div>
   <div id="lista" class="lista"></div>
   <p id="lista-vacia" class="vacio oculto">
-    Todavia no hay grabaciones.<br><span class="apagado">Sube la primera con el boton de abajo.</span>
+    Todavía no hay grabaciones.<br><span class="apagado">Sube la primera con el botón de abajo.</span>
   </p>
 
   <div class="pie">
     <label class="principal subir">
       <input type="file" id="campo-fichero" accept="audio/*,video/mp4" hidden>
-      Subir grabacion
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 5v14"></path><path d="M5 12h14"></path>
+      </svg>
+      Subir grabación
     </label>
   </div>
 
@@ -67,10 +101,21 @@
 <!-- Detalle de una reunion -->
 <section id="vista-detalle" class="vista oculto">
   <header class="barra">
-    <button id="boton-volver" class="icono" aria-label="Volver">&#8592;</button>
-    <h1 id="detalle-titulo">Reunion</h1>
+    <button id="boton-volver" class="icono" aria-label="Volver a la lista">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+        <path d="M15 5l-7 7 7 7"></path>
+      </svg>
+    </button>
+    <h1 id="detalle-titulo">Reunión</h1>
     <div class="acciones">
-      <button id="boton-copiar" class="icono" aria-label="Copiar texto">&#128203;</button>
+      <button id="boton-copiar" class="icono" aria-label="Copiar la transcripción">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+          <path d="M15 5.5A1.5 1.5 0 0 0 13.5 4H5.5A1.5 1.5 0 0 0 4 5.5v8A1.5 1.5 0 0 0 5.5 15"></path>
+        </svg>
+      </button>
     </div>
   </header>
   <div id="detalle" class="detalle"></div>
@@ -81,11 +126,11 @@
     <h2 id="ajustes-titulo">Antes de subir</h2>
     <p class="apagado" id="ajustes-fichero"></p>
 
-    <label class="campo">Titulo
+    <label class="campo">Título
       <input type="text" id="campo-titulo" autocomplete="off" maxlength="80">
     </label>
 
-    <label class="campo">Cuantas personas hablan <span class="apagado">(opcional)</span>
+    <label class="campo">Cuántas personas hablan <span class="apagado">(opcional)</span>
       <input type="number" id="campo-hablantes" min="1" max="20" inputmode="numeric"
              placeholder="lo averigua solo">
     </label>
@@ -94,7 +139,7 @@
       <textarea id="campo-vocabulario" rows="2" maxlength="2000"
                 placeholder="Nombres, marcas, modelos: Lynx, Vanderbilt SPC..."></textarea>
     </label>
-    <p class="pista apagado">Terminos que el modelo tendra presentes. Pocos y
+    <p class="pista apagado">Términos que el modelo tendrá presentes. Pocos y
       pertinentes: una lista larga empeora el resultado.</p>
 
     <div class="dialogo-botones">
@@ -106,7 +151,7 @@
 
 <dialog id="dialogo-hablante">
   <form method="dialog" id="form-hablante">
-    <h2 id="dialogo-titulo">Quien habla</h2>
+    <h2 id="dialogo-titulo">Quién habla</h2>
     <p class="apagado" id="dialogo-pista"></p>
     <input type="text" id="campo-nombre" placeholder="Nombre" autocomplete="off"
            maxlength="60" enterkeyhint="done">
@@ -119,6 +164,6 @@
 
 <div id="aviso" class="aviso oculto"></div>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

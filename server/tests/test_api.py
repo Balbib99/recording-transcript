@@ -122,6 +122,42 @@ with TestClient(app) as c:
     r = c.get("/api/estado", headers=AUTH)
     comprobar("resumen de estado", r.json()["trabajos"]["procesando"] == 2, r.json())
 
+    print("\n-- voces en el listado --")
+    # El listado de la app pinta las iniciales de cada voz y cuantas quedan
+    # por nombrar, sin abrir el JSON de la transcripcion: ese resumen se
+    # guarda en la fila y tiene que rehacerse tambien al renombrar.
+    resultado = {
+        "segmentos": [],
+        "duracion": 90.0,
+        "idioma": "es",
+        "hablantes": [
+            {"etiqueta": "SPEAKER_00", "nombre": "Javi", "segundos": 60.0,
+             "intervenciones": 2, "palabras": 10},
+            {"etiqueta": "SPEAKER_01", "nombre": "SPEAKER_01", "segundos": 30.0,
+             "intervenciones": 1, "palabras": 5},
+        ],
+        "turnos": [
+            {"hablante": "SPEAKER_00", "inicio": 0.0, "fin": 60.0, "texto": "Hola"},
+            {"hablante": "SPEAKER_01", "inicio": 60.0, "fin": 90.0, "texto": "Adios"},
+        ],
+    }
+    r = c.post(f"/api/jobs/{job_id}/resultado", headers=AUTH, json=resultado)
+    comprobar("el resultado se acepta", r.status_code == 200, r.text)
+    comprobar("una voz con nombre y otra sin el",
+              r.json().get("voces") == ["Javi", ""], r.json().get("voces"))
+
+    en_lista = next(t for t in c.get("/api/jobs", headers=AUTH).json()["trabajos"]
+                    if t["id"] == job_id)
+    comprobar("el listado trae las voces", en_lista.get("voces") == ["Javi", ""],
+              en_lista.get("voces"))
+
+    r = c.post(f"/api/jobs/{job_id}/hablantes", headers=AUTH,
+               json={"SPEAKER_01": "Marta"})
+    comprobar("renombrar da 200", r.status_code == 200, r.text)
+    actualizado = c.get(f"/api/jobs/{job_id}", headers=AUTH).json()
+    comprobar("el listado se entera del nombre nuevo",
+              actualizado.get("voces") == ["Javi", "Marta"], actualizado.get("voces"))
+
     print("\n-- borrado --")
     r = c.delete(f"/api/jobs/{job_id}", headers=AUTH)
     comprobar("borrado da 200", r.status_code == 200, r.text)

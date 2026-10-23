@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     hablantes     INTEGER,
     idioma        TEXT,
     vocabulario   TEXT,
-    esperados     INTEGER
+    esperados     INTEGER,
+    voces         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_estado ON jobs(estado, creado);
 CREATE INDEX IF NOT EXISTS idx_jobs_sha    ON jobs(sha256);
@@ -69,6 +70,7 @@ def conexion() -> sqlite3.Connection:
 COLUMNAS_NUEVAS = {
     "vocabulario": "TEXT",
     "esperados": "INTEGER",
+    "voces": "TEXT",
 }
 
 
@@ -149,7 +151,7 @@ def actualizar(job_id: str, **campos: Any) -> dict[str, Any] | None:
     permitidas = {
         "titulo", "estado", "reclamado", "terminado", "worker",
         "intentos", "error", "duracion", "hablantes", "idioma",
-        "vocabulario", "esperados",
+        "vocabulario", "esperados", "voces",
     }
     cambios = {k: v for k, v in campos.items() if k in permitidas}
     if not cambios:
