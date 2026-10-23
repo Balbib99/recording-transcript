@@ -8,7 +8,23 @@ el worker, quedaria con los nombres viejos.
 from __future__ import annotations
 
 import datetime as dt
+import json
 from typing import Any
+
+
+def voces_json(hablantes: list[dict[str, Any]] | None) -> str | None:
+    """Nombres de las voces, en orden, con cadena vacia en las sin nombrar.
+
+    Se guarda resuelto en la fila del trabajo para que el listado pueda decir
+    quien habla sin abrir el JSON de cada transcripcion, que es grande.
+    """
+    if not hablantes:
+        return None
+    nombres = []
+    for hablante in hablantes:
+        nombre = str(hablante.get("nombre") or "").strip()
+        nombres.append("" if not nombre or nombre == hablante.get("etiqueta") else nombre)
+    return json.dumps(nombres, ensure_ascii=False)
 
 
 def reloj(segundos: Any) -> str:

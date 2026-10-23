@@ -91,21 +91,6 @@ def ruta_audio(job: dict[str, Any]) -> Path:
     return config.AUDIO_DIR / f"{job['id']}{job['extension']}"
 
 
-def voces_json(hablantes: list[dict[str, Any]] | None) -> str | None:
-    """Nombres de las voces, en orden, con cadena vacia en las sin nombrar.
-
-    Se guarda resuelto en la fila del trabajo para que el listado pueda decir
-    quien habla sin abrir el JSON de cada transcripcion, que es grande.
-    """
-    if not hablantes:
-        return None
-    nombres = []
-    for hablante in hablantes:
-        nombre = str(hablante.get("nombre") or "").strip()
-        nombres.append("" if not nombre or nombre == hablante.get("etiqueta") else nombre)
-    return json.dumps(nombres, ensure_ascii=False)
-
-
 def voces_de(job: dict[str, Any]) -> list[str] | None:
     try:
         return json.loads(job["voces"]) if job.get("voces") else None
@@ -394,7 +379,7 @@ async def entregar_resultado(job_id: str, payload: dict[str, Any]) -> dict[str, 
         duracion=payload.get("duracion"),
         hablantes=len(payload.get("hablantes") or []) or None,
         idioma=payload.get("idioma"),
-        voces=voces_json(payload.get("hablantes")),
+        voces=render.voces_json(payload.get("hablantes")),
     )
     return publico(actualizado)  # type: ignore[arg-type]
 
@@ -436,7 +421,7 @@ def renombrar_hablantes(job_id: str, nombres: dict[str, str]) -> dict[str, Any]:
 
     # El listado muestra las iniciales y cuantas quedan sin nombre: hay que
     # rehacer ese resumen aqui, que es donde cambian los nombres.
-    db.actualizar(job_id, voces=voces_json(datos.get("hablantes")))
+    db.actualizar(job_id, voces=render.voces_json(datos.get("hablantes")))
 
     return {"id": job_id, "hablantes": datos.get("hablantes") or []}
 
