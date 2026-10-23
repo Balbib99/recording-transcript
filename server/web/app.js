@@ -10,6 +10,9 @@ let token = localStorage.getItem(CLAVE_TOKEN) || '';
 let temporizador = null;
 let estadoDetalle = null;   // { job, datos } de la reunion abierta
 let trabajoAbierto = null;  // el job de la pantalla de detalle, este hecho o no
+let seleccion = null;       // Set de ids mientras se eligen grabaciones; null fuera de ese modo
+let ultimosDatos = { trabajos: [] };   // lo ultimo que se pinto en la lista
+let borradoPendiente = null;           // { ids, desdeDetalle } esperando confirmacion
 
 /* El token se puede pasar en la URL (?token=...) para no teclear 64 caracteres
    en el movil. Se guarda y se borra de la barra de direcciones en el acto, para
@@ -92,6 +95,10 @@ function enrutar() {
   // Un dialogo abierto no se entera de que cambia la pantalla: al volver atras
   // con el boton del movil se quedaba flotando encima de otra reunion.
   for (const dialogo of document.querySelectorAll('dialog[open]')) dialogo.close();
+  if (seleccion) {
+    seleccion = null;
+    $('#vista-lista')?.classList.remove('seleccionando');
+  }
 
   if (!token) { mostrar('token'); return; }
   const ruta = location.hash.slice(1);
@@ -114,12 +121,19 @@ const ETIQUETA_ESTADO = {
 
 function pintarLista(datos) {
   const { trabajos, resumen } = datos;
+  ultimosDatos = datos;
   pintarEstadoPC(datos.worker);
+
+  // Si algo elegido ya no esta (se borro desde otro sitio), se descarta.
+  if (seleccion) {
+    const vivas = new Set(trabajos.map((t) => t.id));
+    for (const id of [...seleccion]) if (!vivas.has(id)) seleccion.delete(id);
+  }
   const contenedor = $('#lista');
   contenedor.innerHTML = '';
 
   const total = trabajos.length;
-  $('#resumen').textContent = `${total} grabación${total === 1 ? '' : 'es'}`;
+  $('#resumen').textContent = `${total} ${total === 1 ? 'grabación' : 'grabaciones'}`;
 
   if (resumen) {
     const enEspera = resumen.pendiente + resumen.procesando;
@@ -134,25 +148,43 @@ function pintarLista(datos) {
   $('#lista-vacia').classList.toggle('oculto', total > 0);
 
   for (const t of trabajos) contenedor.append(tarjetaDe(t));
+  if (seleccion) actualizarSeleccion();
 }
 
 function tarjetaDe(t) {
   const roto = t.estado === 'fallido';
+  const eligiendo = seleccion !== null;
 
   // La tarjeta fallida lleva dentro su boton de reintentar, y un boton dentro
   // de otro no es HTML valido: se queda como caja y se entra por el titulo.
-  const caja = document.createElement(roto ? 'div' : 'button');
+  // Al elegir ya no hay nada dentro que pulsar, y vuelve a ser un boton.
+  const conControles = roto && !eligiendo;
+  const caja = document.createElement(conControles ? 'div' : 'button');
   caja.className = `tarjeta${roto ? ' rota' : ''}`;
-  if (!roto) {
+  caja.dataset.id = t.id;
+  if (!conControles) {
     caja.type = 'button';
-    caja.onclick = () => { location.hash = `/j/${t.id}`; };
+    if (eligiendo) {
+      const elegida = seleccion.has(t.id);
+      caja.classList.toggle('elegida', elegida);
+      caja.setAttribute('aria-pressed', String(elegida));
+      caja.onclick = () => alternar(t.id);
+    } else {
+      caja.onclick = () => { location.hash = `/j/${t.id}`; };
+    }
   }
 
   const cabecera = document.createElement('h2');
-  const titulo = document.createElement(roto ? 'a' : 'span');
+  if (eligiendo) {
+    const marca = document.createElement('span');
+    marca.className = 'marca';
+    marca.setAttribute('aria-hidden', 'true');
+    cabecera.append(marca);
+  }
+  const titulo = document.createElement(conControles ? 'a' : 'span');
   titulo.className = 'titulo';
   titulo.textContent = t.titulo || t.fichero;
-  if (roto) titulo.href = `#/j/${t.id}`;
+  if (conControles) titulo.href = `#/j/${t.id}`;
   const estado = document.createElement('span');
   estado.className = `estado ${t.estado}`;
   estado.textContent = ETIQUETA_ESTADO[t.estado] || t.estado;
@@ -183,12 +215,15 @@ function tarjetaDe(t) {
     const motivo = document.createElement('div');
     motivo.className = 'motivo';
     motivo.textContent = (t.error || 'motivo desconocido').slice(0, 140);
-    const reintentar = document.createElement('button');
-    reintentar.type = 'button';
-    reintentar.className = 'reintentar';
-    reintentar.textContent = 'Volver a la cola';
-    reintentar.onclick = () => reencolar(t.id);
-    caja.append(motivo, reintentar);
+    caja.append(motivo);
+    if (conControles) {
+      const reintentar = document.createElement('button');
+      reintentar.type = 'button';
+      reintentar.className = 'reintentar';
+      reintentar.textContent = 'Volver a la cola';
+      reintentar.onclick = () => reencolar(t.id);
+      caja.append(reintentar);
+    }
   } else if (t.voces?.length) {
     caja.append(filaDeVoces(t.voces));
   }
@@ -257,7 +292,7 @@ function programarRefresco(trabajos) {
   clearTimeout(temporizador);
   const hayMovimiento = trabajos.some(
     (t) => t.estado === 'pendiente' || t.estado === 'procesando');
-  if (hayMovimiento && !document.hidden) {
+  if (hayMovimiento && !document.hidden && !seleccion) {
     temporizador = setTimeout(() => cargarLista(true), 8000);
   }
 }
@@ -687,34 +722,148 @@ async function guardarTitulo(titulo) {
   }
 }
 
-function pedirBorrado() {
-  const job = trabajoAbierto;
-  $('#borrar-titulo').textContent = job.titulo || job.fichero;
+/* Sirve igual para una (desde el detalle) que para varias (desde la lista). */
+function pedirBorradoDe(trabajos, desdeDetalle) {
+  borradoPendiente = { ids: trabajos.map((t) => t.id), desdeDetalle };
+  const varias = trabajos.length > 1;
+  const enMarcha = trabajos.filter((t) => t.estado === 'procesando').length;
+
+  $('#borrar-pregunta').textContent = varias
+    ? `¿Eliminar ${trabajos.length} grabaciones?`
+    : '¿Eliminar esta grabación?';
+  $('#borrar-aceptar').textContent = varias ? `Eliminar ${trabajos.length}` : 'Eliminar';
+
+  // Los nombres, para comprobar antes de confirmar. Con muchas, los primeros.
+  const caja = $('#borrar-titulo');
+  caja.textContent = '';
+  const nombres = trabajos.map((t) => t.titulo || t.fichero);
+  for (const nombre of nombres.slice(0, 5)) {
+    const linea = document.createElement('div');
+    linea.textContent = nombre;
+    caja.append(linea);
+  }
+  if (nombres.length > 5) {
+    const resto = document.createElement('div');
+    resto.className = 'apagado';
+    resto.textContent = `y ${nombres.length - 5} más`;
+    caja.append(resto);
+  }
+
   // Un trabajo en marcha se puede borrar (hace falta cuando el PC murio a
   // medias y no se va a mover solo), pero conviene saber que pasa con el PC.
-  $('#borrar-aviso').textContent = job.estado === 'procesando'
-    ? 'Se está transcribiendo ahora: el PC terminará el trabajo y lo descartará. Se borra también el audio. No se puede deshacer.'
-    : 'Se borran el audio y la transcripción de la Pi. No se puede deshacer.';
+  let aviso;
+  if (!varias) {
+    aviso = enMarcha
+      ? 'Se está transcribiendo ahora: el PC terminará el trabajo y lo descartará. Se borra también el audio. No se puede deshacer.'
+      : 'Se borran el audio y la transcripción de la Pi. No se puede deshacer.';
+  } else {
+    aviso = 'Se borran los audios y las transcripciones de la Pi. No se puede deshacer.';
+    if (enMarcha) {
+      aviso += enMarcha === 1
+        ? ' Una se está transcribiendo ahora: el PC terminará ese trabajo y lo descartará.'
+        : ` ${enMarcha} se están transcribiendo ahora: el PC terminará esos trabajos y los descartará.`;
+    }
+  }
+  $('#borrar-aviso').textContent = aviso;
   $('#dialogo-borrar').showModal();
 }
 
-async function borrarTrabajo() {
-  const job = trabajoAbierto;
-  if (!job) return;
-  try {
-    await api(`/jobs/${job.id}`, { method: 'DELETE' });
-  } catch (e) {
-    // Ya no estaba (se borro desde otro sitio): el objetivo esta cumplido.
-    if (e.message !== 'HTTP 404') {
-      avisar('No se pudo eliminar', true);
-      return;
+async function confirmarBorrado() {
+  const pendiente = borradoPendiente;
+  borradoPendiente = null;
+  if (!pendiente) return;
+
+  const borradas = [];
+  let fallos = 0;
+  for (const id of pendiente.ids) {
+    try {
+      await api(`/jobs/${id}`, { method: 'DELETE' });
+      borradas.push(id);
+    } catch (e) {
+      // Ya no estaba (se borro desde otro sitio): el objetivo esta cumplido.
+      if (e.message === 'HTTP 404') borradas.push(id); else fallos++;
     }
   }
-  trabajoAbierto = null;
-  estadoDetalle = null;
-  avisar('Grabación eliminada');
-  location.hash = '';   // vuelve a la lista, que se recarga sola
+
+  if (pendiente.desdeDetalle) {
+    if (fallos) return avisar('No se pudo eliminar', true);
+    trabajoAbierto = null;
+    estadoDetalle = null;
+    avisar('Grabación eliminada');
+    location.hash = '';   // vuelve a la lista, que se recarga sola
+    return;
+  }
+
+  // Desde la lista: se quitan ya de lo pintado, sin esperar a la recarga.
+  ultimosDatos = {
+    ...ultimosDatos,
+    trabajos: ultimosDatos.trabajos.filter((t) => !borradas.includes(t.id)),
+  };
+  salirDeSeleccion();
+
+  if (!fallos) {
+    avisar(borradas.length === 1 ? 'Grabación eliminada'
+                                 : `${borradas.length} grabaciones eliminadas`);
+  } else {
+    avisar(`Eliminadas ${borradas.length} de ${pendiente.ids.length}: ${fallos} no se pudieron borrar`, true);
+  }
 }
+
+// ------------------------------------------------ modo de seleccion
+
+function entrarEnSeleccion() {
+  if (!ultimosDatos.trabajos.length) return avisar('No hay grabaciones que elegir');
+  seleccion = new Set();
+  clearTimeout(temporizador);   // la lista no se mueve mientras se elige
+  $('#vista-lista').classList.add('seleccionando');
+  pintarLista(ultimosDatos);
+}
+
+function salirDeSeleccion() {
+  seleccion = null;
+  $('#vista-lista').classList.remove('seleccionando');
+  pintarLista(ultimosDatos);
+  cargarLista(true);   // recarga de verdad y retoma el refresco automatico
+}
+
+function alternar(id) {
+  if (seleccion.has(id)) seleccion.delete(id); else seleccion.add(id);
+  sincronizarMarcas();
+}
+
+function sincronizarMarcas() {
+  for (const caja of document.querySelectorAll('#lista .tarjeta')) {
+    const elegida = seleccion.has(caja.dataset.id);
+    caja.classList.toggle('elegida', elegida);
+    caja.setAttribute('aria-pressed', String(elegida));
+  }
+  actualizarSeleccion();
+}
+
+function actualizarSeleccion() {
+  const n = seleccion.size;
+  $('#seleccion-cuenta').textContent = n
+    ? `${n} seleccionada${n === 1 ? '' : 's'}` : 'Elige grabaciones';
+  const borrar = $('#seleccion-borrar');
+  borrar.disabled = n === 0;
+  borrar.textContent = n ? `Eliminar ${n}` : 'Eliminar';
+  const todas = n > 0 && n === ultimosDatos.trabajos.length;
+  $('#seleccion-todas').textContent = todas ? 'Ninguna' : 'Todas';
+}
+
+$('#boton-seleccionar')?.addEventListener('click', entrarEnSeleccion);
+$('#seleccion-cancelar')?.addEventListener('click', salirDeSeleccion);
+
+$('#seleccion-todas')?.addEventListener('click', () => {
+  const todas = seleccion.size === ultimosDatos.trabajos.length;
+  seleccion = new Set(todas ? [] : ultimosDatos.trabajos.map((t) => t.id));
+  sincronizarMarcas();
+});
+
+$('#seleccion-borrar')?.addEventListener('click', () => {
+  const elegidas = ultimosDatos.trabajos.filter((t) => seleccion.has(t.id));
+  if (elegidas.length) pedirBorradoDe(elegidas, false);
+});
 
 $('#boton-menu')?.addEventListener('click', abrirMenu);
 
@@ -725,7 +874,7 @@ $('#accion-renombrar')?.addEventListener('click', () => {
 
 $('#accion-borrar')?.addEventListener('click', () => {
   $('#dialogo-acciones').close();
-  pedirBorrado();
+  pedirBorradoDe([trabajoAbierto], true);
 });
 
 $('#form-nombre')?.addEventListener('submit', (e) => {
@@ -735,7 +884,7 @@ $('#form-nombre')?.addEventListener('submit', (e) => {
 
 $('#form-borrar')?.addEventListener('submit', (e) => {
   if (e.submitter?.value !== 'borrar') return;
-  borrarTrabajo();
+  confirmarBorrado();
 });
 
 /* Intro dentro de un campo de texto envia el formulario con su PRIMER boton, y

@@ -619,6 +619,60 @@ dialog input { margin-bottom: 14px; }
 .dialogo-botones { display: flex; gap: 10px; }
 .dialogo-botones .principal, .dialogo-botones .secundario { flex: 1; box-shadow: none; }
 
+/* ---------------------------------------------------- modo de seleccion
+
+   Mientras se eligen grabaciones desaparece lo de siempre (cabecera, panel de
+   la maquinaria y boton de subir) y entran su cabecera y su barra de abajo. */
+
+#barra-seleccion, #pie-seleccion { display: none; }
+.seleccionando #barra-seleccion { display: flex; }
+.seleccionando #pie-seleccion { display: block; }
+.seleccionando #barra-lista,
+.seleccionando #barra-pc,
+.seleccionando #pie-subida { display: none; }
+
+.barra-seleccion {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px 10px 12px;
+  background: var(--fondo);
+}
+.barra-seleccion h1 { font-size: 1.1rem; font-weight: 650; letter-spacing: -.01em; }
+
+.compacto { min-height: 44px; padding: 0 16px; font-size: .85rem; }
+
+/* La casilla va delante del titulo, que es donde empieza a leerse. */
+.marca {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #7b8b97;
+  border-radius: 50%;
+}
+.tarjeta.elegida {
+  border-color: var(--acento);
+  background: #f6fbf9;
+  box-shadow: 0 0 0 1px var(--acento);
+}
+.tarjeta.elegida .marca { background: var(--acento); border-color: var(--acento); }
+.tarjeta.elegida .marca::after {
+  content: "";
+  width: 5px;
+  height: 10px;
+  margin-top: -2px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.principal[disabled] { opacity: .45; box-shadow: none; cursor: default; }
+
 /* Menu de acciones de una grabacion y confirmacion de borrado */
 .acciones-lista { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 
@@ -655,6 +709,8 @@ dialog input { margin-bottom: 14px; }
   border-radius: var(--radio-chico);
   overflow-wrap: anywhere;
 }
+
+.borrar-titulo div + div { margin-top: 6px; }
 
 .principal.peligro-boton { background: var(--error); box-shadow: none; }
 .principal.peligro-boton:active { background: #7d1b13; }
