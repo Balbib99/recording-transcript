@@ -129,6 +129,13 @@ def cmd_borrar(args) -> int:
 
 
 def main() -> int:
+    # Las transcripciones llevan acentos: sin esto, redirigir la salida a un
+    # fichero en Windows los rompe.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
     parser = argparse.ArgumentParser(description="Cliente de la API de RecordingCraft")
     sub = parser.add_subparsers(dest="comando", required=True)
 
