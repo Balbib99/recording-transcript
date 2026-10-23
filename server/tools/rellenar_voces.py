@@ -7,8 +7,13 @@ que se renombrase a alguien. Esto lo pone al dia leyendo cada resultado.
 
 Se puede ejecutar las veces que haga falta: solo toca lo que falta.
 
-    sudo docker compose -f /srv/recordingcraft/app/server/docker-compose.yml \
-         exec api python tools/rellenar_voces.py
+No hace falta el contenedor, y de hecho no sirve: el compose solo monta
+app/ y web/, asi que esta carpeta no existe ahi dentro. Solo usa la
+libreria estandar, asi que se lanza con el python del sistema, como el
+usuario dueno de los datos:
+
+    cd /srv/recordingcraft/app/server
+    RC_DATA_DIR=/srv/recordingcraft/data python3 tools/rellenar_voces.py
 """
 
 from __future__ import annotations
