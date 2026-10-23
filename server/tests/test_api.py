@@ -158,12 +158,57 @@ with TestClient(app) as c:
     comprobar("el listado se entera del nombre nuevo",
               actualizado.get("voces") == ["Javi", "Marta"], actualizado.get("voces"))
 
+    print("\n-- renombrar --")
+    r = c.post(f"/api/jobs/{job_id}/ajustes", headers=AUTH,
+               json={"titulo": "  Instalacion Lynx  "})
+    comprobar("renombrar una reunion ya hecha da 200", r.status_code == 200, r.text)
+    comprobar("el titulo se guarda sin espacios sobrantes",
+              r.json()["titulo"] == "Instalacion Lynx", r.json()["titulo"])
+    comprobar("cambiar solo el nombre no da aviso falso",
+              r.json().get("aviso") is None, r.json().get("aviso"))
+
+    guardada = c.get(f"/api/jobs/{job_id}/transcripcion", headers=AUTH).json()
+    comprobar("el JSON guardado lleva el nombre nuevo",
+              guardada.get("titulo") == "Instalacion Lynx", guardada.get("titulo"))
+    comprobar("el Markdown tambien",
+              guardada.get("markdown", "").startswith("# Instalacion Lynx"),
+              guardada.get("markdown", "")[:40])
+    comprobar("y las voces no se tocan", [h["nombre"] for h in guardada["hablantes"]]
+              == ["Javi", "Marta"], guardada["hablantes"])
+
+    r = c.post(f"/api/jobs/{job_id}/ajustes", headers=AUTH, json={"titulo": "x" * 500})
+    comprobar("un nombre desmesurado se recorta", len(r.json()["titulo"]) == 120,
+              len(r.json()["titulo"]))
+
+    r = c.post(f"/api/jobs/{job_id}/ajustes", headers=AUTH,
+               json={"vocabulario": "Lynx"})
+    comprobar("el vocabulario de una reunion hecha si avisa",
+              bool(r.json().get("aviso")), r.json().get("aviso"))
+
+    r = c.post("/api/jobs/noexiste/ajustes", headers=AUTH, json={"titulo": "x"})
+    comprobar("renombrar un id inexistente da 404", r.status_code == 404, r.status_code)
+
     print("\n-- borrado --")
     r = c.delete(f"/api/jobs/{job_id}", headers=AUTH)
     comprobar("borrado da 200", r.status_code == 200, r.text)
     comprobar("el audio desaparece del disco", not guardado.exists())
     comprobar("ya no aparece en la lista",
               c.get("/api/jobs", headers=AUTH).json()["total"] == 1)
+
+    comprobar("borrar dos veces da 404, no un error",
+              c.delete(f"/api/jobs/{job_id}", headers=AUTH).status_code == 404)
+    comprobar("tampoco queda el JSON de resultado",
+              not (TMP / "resultados" / f"{job_id}.json").exists())
+
+    # El otro trabajo sigue 'procesando' (lo reclamo un worker de prueba):
+    # se puede borrar igualmente, que es lo que hace falta cuando el worker
+    # murio a mitad y el trabajo no se va a mover solo.
+    restante = c.get("/api/jobs", headers=AUTH).json()["trabajos"][0]
+    comprobar("el que queda esta en proceso", restante["estado"] == "procesando",
+              restante["estado"])
+    comprobar("se puede borrar un trabajo en proceso",
+              c.delete(f"/api/jobs/{restante['id']}", headers=AUTH).status_code == 200)
+    comprobar("la cola queda vacia", c.get("/api/jobs", headers=AUTH).json()["total"] == 0)
 
 print("\n" + ("TODO OK" if not fallos else f"{len(fallos)} FALLOS: {fallos}"))
 sys.exit(1 if fallos else 0)

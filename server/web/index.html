@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="iconos/icono-192.png">
 <link rel="apple-touch-icon" href="iconos/icono-192.png">
-<link rel="stylesheet" href="estilos.css?v=5">
+<link rel="stylesheet" href="estilos.css?v=6">
 </head>
 <body>
 
@@ -116,10 +116,66 @@
           <path d="M15 5.5A1.5 1.5 0 0 0 13.5 4H5.5A1.5 1.5 0 0 0 4 5.5v8A1.5 1.5 0 0 0 5.5 15"></path>
         </svg>
       </button>
+      <button id="boton-menu" class="icono" aria-label="Más opciones" aria-haspopup="dialog">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle>
+          <circle cx="19" cy="12" r="1.8"></circle>
+        </svg>
+      </button>
     </div>
   </header>
   <div id="detalle" class="detalle"></div>
 </section>
+
+<dialog id="dialogo-acciones">
+  <h2 id="acciones-titulo">Grabación</h2>
+  <p class="apagado" id="acciones-pista">Qué quieres hacer con ella</p>
+  <div class="acciones-lista">
+    <button type="button" id="accion-renombrar" class="accion">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 20h4L19 9a2.1 2.1 0 0 0-4-4L4 16v4z"></path><path d="M13.5 6.5l4 4"></path>
+      </svg>
+      Cambiar el nombre
+    </button>
+    <button type="button" id="accion-borrar" class="accion peligro">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 7h16"></path><path d="M10 11v6M14 11v6"></path>
+        <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"></path><path d="M9 7V4h6v3"></path>
+      </svg>
+      Eliminar grabación
+    </button>
+  </div>
+  <form method="dialog">
+    <button class="secundario cerrar">Cerrar</button>
+  </form>
+</dialog>
+
+<dialog id="dialogo-nombre">
+  <form method="dialog" id="form-nombre">
+    <h2>Cambiar el nombre</h2>
+    <p class="apagado" id="nombre-pista"></p>
+    <input type="text" id="campo-nuevo-titulo" maxlength="80" autocomplete="off"
+           enterkeyhint="done" required aria-label="Nombre de la grabación">
+    <div class="dialogo-botones">
+      <button value="cancelar" class="secundario" formnovalidate>Cancelar</button>
+      <button value="guardar" class="principal" id="nombre-aceptar">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dialogo-borrar">
+  <form method="dialog" id="form-borrar">
+    <h2>¿Eliminar esta grabación?</h2>
+    <p class="borrar-titulo" id="borrar-titulo"></p>
+    <p class="apagado" id="borrar-aviso"></p>
+    <div class="dialogo-botones">
+      <button value="cancelar" class="secundario">Cancelar</button>
+      <button value="borrar" class="principal peligro-boton">Eliminar</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="dialogo-ajustes">
   <form method="dialog" id="form-ajustes">
@@ -157,13 +213,13 @@
            maxlength="60" enterkeyhint="done">
     <div class="dialogo-botones">
       <button value="cancelar" class="secundario">Cancelar</button>
-      <button value="guardar" class="principal">Guardar</button>
+      <button value="guardar" class="principal" id="voz-aceptar">Guardar</button>
     </div>
   </form>
 </dialog>
 
 <div id="aviso" class="aviso oculto"></div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

@@ -619,6 +619,46 @@ dialog input { margin-bottom: 14px; }
 .dialogo-botones { display: flex; gap: 10px; }
 .dialogo-botones .principal, .dialogo-botones .secundario { flex: 1; box-shadow: none; }
 
+/* Menu de acciones de una grabacion y confirmacion de borrado */
+.acciones-lista { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+
+.accion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  font-size: .95rem;
+  font-weight: 500;
+  text-align: left;
+  background: var(--superficie);
+  color: var(--texto);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-medio);
+}
+.accion:active { background: var(--superficie-alta); }
+.accion.peligro { color: var(--error); border-color: var(--error-borde); }
+.accion.peligro:active { background: var(--error-suave); }
+
+.cerrar { width: 100%; }
+
+/* El nombre de lo que se va a borrar va destacado: es lo que se comprueba
+   antes de confirmar. */
+.borrar-titulo {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  font-size: .92rem;
+  font-weight: 600;
+  line-height: 1.35;
+  background: var(--superficie-alta);
+  border-radius: var(--radio-chico);
+  overflow-wrap: anywhere;
+}
+
+.principal.peligro-boton { background: var(--error); box-shadow: none; }
+.principal.peligro-boton:active { background: #7d1b13; }
+
 .aviso {
   position: fixed;
   left: 20px;

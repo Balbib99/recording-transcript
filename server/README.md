@@ -34,7 +34,8 @@ No transcribe nada por sí mismo: aquí no hay ni PyTorch ni modelos.
 | GET | `/api/jobs/{id}` | Detalle |
 | GET | `/api/jobs/{id}/audio` | Descargar el audio (lo usa el worker) |
 | GET | `/api/jobs/{id}/transcripcion` | Resultado, cuando exista |
-| DELETE | `/api/jobs/{id}` | Borrar trabajo, audio y transcripción |
+| POST | `/api/jobs/{id}/ajustes` | Cambiar `titulo`, `vocabulario` o `esperados`. El título se puede cambiar siempre (si ya hay transcripción, también se rehace su JSON y su Markdown); vocabulario y personas solo cuentan antes de transcribir |
+| DELETE | `/api/jobs/{id}` | Borrar trabajo, audio y transcripción, en cualquier estado (también uno atascado en `procesando`) |
 
 Documentación interactiva en `/api/docs`.
 

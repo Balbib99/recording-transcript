@@ -91,6 +91,18 @@ def ruta_audio(job: dict[str, Any]) -> Path:
     return config.AUDIO_DIR / f"{job['id']}{job['extension']}"
 
 
+def guardar_resultado(ruta: Path, datos: dict[str, Any]) -> None:
+    """Escribe el JSON de una transcripcion sin dejarlo nunca a medias.
+
+    Se escribe aparte y se renombra: si el proceso muere a medias, no queda
+    un JSON truncado que luego falle al leerse.
+    """
+    temporal = ruta.with_suffix(".json.parcial")
+    temporal.write_text(json.dumps(datos, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+    temporal.replace(ruta)
+
+
 def voces_de(job: dict[str, Any]) -> list[str] | None:
     try:
         return json.loads(job["voces"]) if job.get("voces") else None
@@ -278,7 +290,7 @@ def ajustes(job_id: str, datos: dict[str, Any]) -> dict[str, Any]:
 
     cambios: dict[str, Any] = {}
     if "titulo" in datos:
-        cambios["titulo"] = (str(datos["titulo"] or "").strip() or None)
+        cambios["titulo"] = (str(datos["titulo"] or "").strip()[:120] or None)
     if "vocabulario" in datos:
         cambios["vocabulario"] = (str(datos["vocabulario"] or "").strip()[:2000] or None)
     if "esperados" in datos:
@@ -291,7 +303,21 @@ def ajustes(job_id: str, datos: dict[str, Any]) -> dict[str, Any]:
         cambios["esperados"] = numero or None
 
     actualizado = db.actualizar(job_id, **cambios)
-    aviso = None if job["estado"] == "pendiente" else (
+
+    # El nombre se puede cambiar siempre. Si la reunion ya esta transcrita, el
+    # JSON y el Markdown que lleva dentro tienen que enterarse tambien, o
+    # quedarian con el nombre viejo.
+    if "titulo" in cambios:
+        ruta = config.RESULT_DIR / f"{job_id}.json"
+        if ruta.is_file():
+            resultado = json.loads(ruta.read_text(encoding="utf-8"))
+            resultado["titulo"] = actualizado["titulo"] or Path(job["fichero"]).stem  # type: ignore[index]
+            render.regenerar(resultado)
+            guardar_resultado(ruta, resultado)
+
+    # Vocabulario y personas esperadas, en cambio, solo cuentan al transcribir.
+    afecta_a_la_transcripcion = bool({"vocabulario", "esperados"} & cambios.keys())
+    aviso = None if (job["estado"] == "pendiente" or not afecta_a_la_transcripcion) else (
         "El trabajo ya no esta pendiente: reencolalo para que surtan efecto")
     return {**publico(actualizado), "aviso": aviso}  # type: ignore[arg-type]
 
@@ -363,13 +389,7 @@ async def entregar_resultado(job_id: str, payload: dict[str, Any]) -> dict[str, 
     render.regenerar(payload)
 
     config.crear_directorios()
-    destino = config.RESULT_DIR / f"{job_id}.json"
-    # Se escribe aparte y se renombra: si el proceso muere a medias, no queda
-    # un JSON truncado que luego falle al leerse.
-    temporal = destino.with_suffix(".json.parcial")
-    temporal.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                        encoding="utf-8")
-    temporal.replace(destino)
+    guardar_resultado(config.RESULT_DIR / f"{job_id}.json", payload)
 
     actualizado = db.actualizar(
         job_id,
@@ -415,9 +435,7 @@ def renombrar_hablantes(job_id: str, nombres: dict[str, str]) -> dict[str, Any]:
             hablante["nombre"] = nuevo or hablante["etiqueta"]
 
     render.regenerar(datos)
-    temporal = ruta.with_suffix(".json.parcial")
-    temporal.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporal.replace(ruta)
+    guardar_resultado(ruta, datos)
 
     # El listado muestra las iniciales y cuantas quedan sin nombre: hay que
     # rehacer ese resumen aqui, que es donde cambian los nombres.

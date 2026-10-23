@@ -9,6 +9,7 @@ const CLAVE_CACHE = 'rc_ultima_lista';
 let token = localStorage.getItem(CLAVE_TOKEN) || '';
 let temporizador = null;
 let estadoDetalle = null;   // { job, datos } de la reunion abierta
+let trabajoAbierto = null;  // el job de la pantalla de detalle, este hecho o no
 
 /* El token se puede pasar en la URL (?token=...) para no teclear 64 caracteres
    en el movil. Se guarda y se borra de la barra de direcciones en el acto, para
@@ -458,6 +459,7 @@ function subir(fichero, titulo = null, extras = {}) {
 
 async function abrirDetalle(id) {
   mostrar('detalle');
+  trabajoAbierto = null;
   const caja = $('#detalle');
   caja.innerHTML = '<p class="apagado">Cargando...</p>';
 
@@ -468,6 +470,7 @@ async function abrirDetalle(id) {
     caja.innerHTML = '<p class="error">No se pudo cargar</p>';
     return;
   }
+  trabajoAbierto = job;
 
   $('#detalle-titulo').textContent = job.titulo || job.fichero;
 
@@ -650,6 +653,105 @@ function pintarDetalle(caja, job, datos) {
   }
   caja.append(transcripcion);
 }
+
+// --------------------------------- cambiar el nombre y eliminar grabaciones
+
+function abrirMenu() {
+  if (!trabajoAbierto) return avisar('Espera a que cargue la grabación');
+  $('#acciones-titulo').textContent = trabajoAbierto.titulo || trabajoAbierto.fichero;
+  $('#dialogo-acciones').showModal();
+}
+
+function pedirTitulo() {
+  const campo = $('#campo-nuevo-titulo');
+  $('#nombre-pista').textContent = trabajoAbierto.fichero;
+  campo.value = trabajoAbierto.titulo || '';
+  $('#dialogo-nombre').showModal();
+  campo.focus();
+  campo.select();
+}
+
+async function guardarTitulo(titulo) {
+  const job = trabajoAbierto;
+  if (!job || !titulo || titulo === job.titulo) return;
+  try {
+    await api(`/jobs/${job.id}/ajustes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ titulo }),
+    });
+    avisar('Nombre cambiado');
+    abrirDetalle(job.id);
+  } catch (e) {
+    avisar('No se pudo cambiar el nombre', true);
+  }
+}
+
+function pedirBorrado() {
+  const job = trabajoAbierto;
+  $('#borrar-titulo').textContent = job.titulo || job.fichero;
+  // Un trabajo en marcha se puede borrar (hace falta cuando el PC murio a
+  // medias y no se va a mover solo), pero conviene saber que pasa con el PC.
+  $('#borrar-aviso').textContent = job.estado === 'procesando'
+    ? 'Se está transcribiendo ahora: el PC terminará el trabajo y lo descartará. Se borra también el audio. No se puede deshacer.'
+    : 'Se borran el audio y la transcripción de la Pi. No se puede deshacer.';
+  $('#dialogo-borrar').showModal();
+}
+
+async function borrarTrabajo() {
+  const job = trabajoAbierto;
+  if (!job) return;
+  try {
+    await api(`/jobs/${job.id}`, { method: 'DELETE' });
+  } catch (e) {
+    // Ya no estaba (se borro desde otro sitio): el objetivo esta cumplido.
+    if (e.message !== 'HTTP 404') {
+      avisar('No se pudo eliminar', true);
+      return;
+    }
+  }
+  trabajoAbierto = null;
+  estadoDetalle = null;
+  avisar('Grabación eliminada');
+  location.hash = '';   // vuelve a la lista, que se recarga sola
+}
+
+$('#boton-menu')?.addEventListener('click', abrirMenu);
+
+$('#accion-renombrar')?.addEventListener('click', () => {
+  $('#dialogo-acciones').close();
+  pedirTitulo();
+});
+
+$('#accion-borrar')?.addEventListener('click', () => {
+  $('#dialogo-acciones').close();
+  pedirBorrado();
+});
+
+$('#form-nombre')?.addEventListener('submit', (e) => {
+  if (e.submitter?.value !== 'guardar') return;
+  guardarTitulo($('#campo-nuevo-titulo').value.trim());
+});
+
+$('#form-borrar')?.addEventListener('submit', (e) => {
+  if (e.submitter?.value !== 'borrar') return;
+  borrarTrabajo();
+});
+
+/* Intro dentro de un campo de texto envia el formulario con su PRIMER boton, y
+   en todos los dialogos el primero es Cancelar: escribir un nombre y darle a
+   Intro lo tiraba todo. Se dirige a Guardar de forma explicita. */
+function introGuarda(campo, formulario, boton) {
+  campo?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault();
+    formulario.requestSubmit(boton);
+  });
+}
+introGuarda($('#campo-nuevo-titulo'), $('#form-nombre'), $('#nombre-aceptar'));
+introGuarda($('#campo-nombre'), $('#form-hablante'), $('#voz-aceptar'));
+introGuarda($('#campo-titulo'), $('#form-ajustes'), $('#ajustes-aceptar'));
+introGuarda($('#campo-hablantes'), $('#form-ajustes'), $('#ajustes-aceptar'));
 
 // ------------------------------------------------- renombrar hablantes
 
