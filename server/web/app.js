@@ -177,6 +177,75 @@ function programarRefresco(trabajos) {
   }
 }
 
+// --------------------------------------------- ajustes de la grabacion
+
+let ajustesPendientes = null;   // { fichero } al subir, o { job } al editar
+
+function pedirAjustes(fichero = null, job = null) {
+  const dialogo = $('#dialogo-ajustes');
+  ajustesPendientes = { fichero, job };
+
+  const subiendo = Boolean(fichero);
+  $('#ajustes-titulo').textContent = subiendo ? 'Antes de subir' : 'Ajustes';
+  $('#ajustes-fichero').textContent = subiendo
+    ? `${fichero.name} · ${(fichero.size / 1e6).toFixed(1)} MB`
+    : 'Se aplicaran cuando el worker la coja';
+  $('#ajustes-aceptar').textContent = subiendo ? 'Subir' : 'Guardar';
+
+  $('#campo-titulo').value = subiendo
+    ? fichero.name.replace(/\.[^.]+$/, '')
+    : (job.titulo || '');
+  $('#campo-hablantes').value = job?.esperados || '';
+  $('#campo-vocabulario').value = job?.vocabulario || vocabularioRecordado();
+
+  dialogo.showModal();
+}
+
+/* El vocabulario suele repetirse entre reuniones del mismo tema, asi que se
+   propone el ultimo usado. Se queda en el dispositivo. */
+function vocabularioRecordado() {
+  try { return localStorage.getItem('rc_vocabulario') || ''; } catch { return ''; }
+}
+
+function recordarVocabulario(valor) {
+  try {
+    if (valor) localStorage.setItem('rc_vocabulario', valor);
+    else localStorage.removeItem('rc_vocabulario');
+  } catch { /* modo privado */ }
+}
+
+async function confirmarAjustes() {
+  if (!ajustesPendientes) return;
+  const { fichero, job } = ajustesPendientes;
+  const titulo = $('#campo-titulo').value.trim();
+  const hablantes = $('#campo-hablantes').value.trim();
+  const vocabulario = $('#campo-vocabulario').value.trim();
+  recordarVocabulario(vocabulario);
+  ajustesPendientes = null;
+
+  if (fichero) {
+    subir(fichero, titulo || null, { hablantes, vocabulario });
+    return;
+  }
+
+  try {
+    await api(`/jobs/${job.id}/ajustes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ titulo, vocabulario, esperados: hablantes || 0 }),
+    });
+    avisar('Ajustes guardados');
+    if (location.hash) abrirDetalle(job.id); else cargarLista(true);
+  } catch (e) {
+    avisar('No se pudieron guardar', true);
+  }
+}
+
+$('#form-ajustes')?.addEventListener('submit', (e) => {
+  if (e.submitter?.value !== 'guardar') { ajustesPendientes = null; return; }
+  confirmarAjustes();
+});
+
 // ------------------------------------------------------- estado del PC
 
 function hace(segundos) {
@@ -245,12 +314,14 @@ function esperarAlPC(intentos = 24) {
 
 // ----------------------------------------------------------------- subida
 
-function subir(fichero, titulo = null) {
+function subir(fichero, titulo = null, extras = {}) {
   if (!fichero) return;
 
   const datos = new FormData();
   datos.append('file', fichero);
   datos.append('titulo', titulo || fichero.name.replace(/\.[^.]+$/, ''));
+  if (extras.vocabulario) datos.append('vocabulario', extras.vocabulario);
+  if (extras.hablantes) datos.append('esperados', extras.hablantes);
 
   const peticion = new XMLHttpRequest();
   peticion.open('POST', 'api/jobs');
@@ -315,6 +386,26 @@ async function abrirDetalle(id) {
     };
     caja.innerHTML = `<p class="${job.estado === 'fallido' ? 'error' : 'apagado'}"></p>`;
     caja.querySelector('p').textContent = mensajes[job.estado] || job.estado;
+
+    // Mientras espera todavia se puede afinar: cuanta gente habla y que
+    // palabras raras van a salir. Despues ya no sirve de nada.
+    if (job.estado === 'pendiente') {
+      const resumen = document.createElement('dl');
+      resumen.className = 'ficha';
+      for (const [clave, valor] of [
+        ['Personas', job.esperados || 'las que detecte'],
+        ['Vocabulario', job.vocabulario || 'ninguno'],
+      ]) {
+        const dt = document.createElement('dt'); dt.textContent = clave;
+        const dd = document.createElement('dd'); dd.textContent = valor;
+        resumen.append(dt, dd);
+      }
+      const boton = document.createElement('button');
+      boton.className = 'principal';
+      boton.textContent = 'Ajustar antes de transcribir';
+      boton.onclick = () => pedirAjustes(null, job);
+      caja.append(resumen, boton);
+    }
     return;
   }
 
@@ -463,8 +554,9 @@ $('#form-token')?.addEventListener('submit', async (e) => {
 });
 
 $('#campo-fichero')?.addEventListener('change', (e) => {
-  subir(e.target.files[0]);
+  const fichero = e.target.files[0];
   e.target.value = '';
+  if (fichero) pedirAjustes(fichero);
 });
 
 $('#boton-recargar')?.addEventListener('click', () => cargarLista());

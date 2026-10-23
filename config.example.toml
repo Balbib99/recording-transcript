@@ -26,6 +26,11 @@ compute_type = "int8_float16"   # GTX 1660 (6 GB): int8_float16. Si da problemas
 batch_size = 4              # bajalo a 2 si te quedas sin VRAM
 # Pista de contexto para mejorar nombres propios y jerga (opcional):
 initial_prompt = ""
+# Terminos que el modelo tiene presentes en TODO el audio, separados por comas.
+# Para nombres propios, marcas y modelos que de otro modo transcribe mal:
+# un "Lynx" que sale como "link", o un modelo de aparato que se desarma en silabas.
+# Pocos y pertinentes: una lista larga empeora el resultado.
+vocabulario = ""
 
 [align]
 # Alineacion forzada: timestamps precisos palabra a palabra. Muy recomendable:

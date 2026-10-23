@@ -35,7 +35,13 @@ def cmd_subir(args) -> int:
     if not ruta.is_file():
         log(f"No existe: {ruta}")
         return 1
-    datos = {"titulo": args.titulo} if args.titulo else {}
+    datos = {}
+    if args.titulo:
+        datos["titulo"] = args.titulo
+    if args.vocabulario:
+        datos["vocabulario"] = args.vocabulario
+    if args.hablantes:
+        datos["esperados"] = str(args.hablantes)
     with open(ruta, "rb") as fichero:
         r = api("POST", "/api/jobs", files={"file": (ruta.name, fichero)},
                 data=datos, timeout=900)
@@ -103,6 +109,31 @@ def cmd_guardar(args) -> int:
     return 0
 
 
+def cmd_ajustes(args) -> int:
+    """Cambia el vocabulario o el numero de hablantes de un trabajo pendiente."""
+    datos = {}
+    if args.vocabulario is not None:
+        datos["vocabulario"] = args.vocabulario
+    if args.hablantes is not None:
+        datos["esperados"] = args.hablantes
+    if args.titulo is not None:
+        datos["titulo"] = args.titulo
+    if not datos:
+        log("Indica --vocabulario, --hablantes o --titulo")
+        return 1
+
+    r = api("POST", f"/api/jobs/{args.id}/ajustes", json=datos)
+    if not r.ok:
+        log(f"Error {r.status_code}: {r.text[:200]}")
+        return 1
+    job = r.json()
+    log(f"{job['id']}  hablantes esperados: {job['esperados'] or '-'}")
+    log(f"            vocabulario: {job['vocabulario'] or '-'}")
+    if job.get("aviso"):
+        log(f"  ! {job['aviso']}")
+    return 0
+
+
 def cmd_hablante(args) -> int:
     """Pone nombre a una etiqueta: cliente.cmd hablante <id> SPEAKER_00 Ana"""
     r = api("POST", f"/api/jobs/{args.id}/hablantes",
@@ -142,6 +173,8 @@ def main() -> int:
     p = sub.add_parser("subir", help="sube una grabacion a la cola")
     p.add_argument("fichero")
     p.add_argument("--titulo")
+    p.add_argument("--vocabulario", help="terminos separados por comas")
+    p.add_argument("--hablantes", type=int, help="cuantas personas hablan")
     p.set_defaults(func=cmd_subir)
 
     p = sub.add_parser("lista", help="estado de la cola")
@@ -156,6 +189,13 @@ def main() -> int:
     p.add_argument("id")
     p.add_argument("carpeta", nargs="?")
     p.set_defaults(func=cmd_guardar)
+
+    p = sub.add_parser("ajustes", help="vocabulario y hablantes de un trabajo pendiente")
+    p.add_argument("id")
+    p.add_argument("--vocabulario")
+    p.add_argument("--hablantes", type=int)
+    p.add_argument("--titulo")
+    p.set_defaults(func=cmd_ajustes)
 
     p = sub.add_parser("hablante", help="pone nombre a un hablante")
     p.add_argument("id")

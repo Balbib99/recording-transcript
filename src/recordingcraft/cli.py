@@ -201,6 +201,8 @@ def cmd_process(args: argparse.Namespace, cfg: Config) -> int:
         cfg.diarization["max_speakers"] = args.max_speakers
     if args.no_diarization:
         cfg.diarization["enabled"] = False
+    if args.vocabulario:
+        cfg.whisper["vocabulario"] = args.vocabulario
 
     files = _collect_inputs(cfg, args.paths)
     if not files:
@@ -415,6 +417,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--speakers", type=int, help="numero exacto de personas en la reunion")
     p.add_argument("--min-speakers", type=int, help="minimo de personas")
     p.add_argument("--max-speakers", type=int, help="maximo de personas")
+    p.add_argument("--vocabulario",
+                   help="terminos separados por comas: nombres propios, marcas, modelos")
     p.add_argument("--no-diarization", action="store_true",
                    help="solo transcribir, sin separar hablantes")
     p.add_argument("--debug", action="store_true", help="muestra la traza completa de los errores")

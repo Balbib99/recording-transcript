@@ -76,6 +76,34 @@
   <div id="detalle" class="detalle"></div>
 </section>
 
+<dialog id="dialogo-ajustes">
+  <form method="dialog" id="form-ajustes">
+    <h2 id="ajustes-titulo">Antes de subir</h2>
+    <p class="apagado" id="ajustes-fichero"></p>
+
+    <label class="campo">Titulo
+      <input type="text" id="campo-titulo" autocomplete="off" maxlength="80">
+    </label>
+
+    <label class="campo">Cuantas personas hablan <span class="apagado">(opcional)</span>
+      <input type="number" id="campo-hablantes" min="1" max="20" inputmode="numeric"
+             placeholder="lo averigua solo">
+    </label>
+
+    <label class="campo">Vocabulario <span class="apagado">(opcional)</span>
+      <textarea id="campo-vocabulario" rows="2" maxlength="2000"
+                placeholder="Nombres, marcas, modelos: Lynx, Vanderbilt SPC..."></textarea>
+    </label>
+    <p class="pista apagado">Terminos que el modelo tendra presentes. Pocos y
+      pertinentes: una lista larga empeora el resultado.</p>
+
+    <div class="dialogo-botones">
+      <button value="cancelar" class="secundario">Cancelar</button>
+      <button value="guardar" class="principal" id="ajustes-aceptar">Subir</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="dialogo-hablante">
   <form method="dialog" id="form-hablante">
     <h2 id="dialogo-titulo">Quien habla</h2>

@@ -353,6 +353,26 @@ dialog h2 { margin: 0 0 4px; font-size: 1.05rem; }
 dialog p { margin: 0 0 14px; font-size: .85rem; }
 dialog input { margin-bottom: 14px; }
 
+.campo {
+  display: block;
+  margin-bottom: 12px;
+  font-size: .85rem;
+  color: var(--apagado);
+}
+.campo input, .campo textarea {
+  margin-top: 5px;
+  margin-bottom: 0;
+  color: var(--texto);
+  font: inherit;
+  width: 100%;
+  padding: 12px;
+  background: var(--superficie-alta);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  resize: vertical;
+}
+.pista { font-size: .78rem; margin: -4px 0 14px; }
+
 .dialogo-botones { display: flex; gap: 10px; }
 .dialogo-botones .principal, .dialogo-botones .secundario { flex: 1; }
 .secundario {

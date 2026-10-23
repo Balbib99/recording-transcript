@@ -9,7 +9,7 @@ import os
 import tempfile
 import warnings
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from recordingcraft import audio as au
 from recordingcraft.config import Config
@@ -149,8 +149,16 @@ def _clean_segments(raw: list[dict]) -> list[dict]:
     return out
 
 
-def transcribe(source: Path, cfg: Config, log: Logger) -> dict:
-    """Procesa un fichero de audio y devuelve el dict que se guarda en meeting.json."""
+def transcribe(source: Path, cfg: Config, log: Logger,
+               ajustes: dict | None = None) -> dict:
+    """Procesa un fichero de audio y devuelve el dict que se guarda en meeting.json.
+
+    `ajustes` permite afinar una grabacion concreta sin tocar la configuracion:
+      vocabulario: terminos que el modelo tiene presentes en todo el audio
+                   (nombres propios, modelos de aparatos, jerga del sector)
+      hablantes:   cuantas personas hay, si se sabe
+    """
+    ajustes = ajustes or {}
     import whisperx
 
     wcfg = cfg.whisper
@@ -167,6 +175,18 @@ def transcribe(source: Path, cfg: Config, log: Logger) -> dict:
     model_name = str(wcfg.get("model", "large-v3"))
     prompt = str(wcfg.get("initial_prompt") or "").strip()
 
+    # El vocabulario de la reunion se suma al general, sin repetir terminos.
+    terminos: list[str] = []
+    for origen in (wcfg.get("vocabulario"), ajustes.get("vocabulario")):
+        if not origen:
+            continue
+        trozos = origen.split(",") if isinstance(origen, str) else origen
+        for termino in trozos:
+            termino = str(termino).strip()
+            if termino and termino.lower() not in {x.lower() for x in terminos}:
+                terminos.append(termino)
+    vocabulario = ", ".join(terminos)
+
     info = au.probe(source)
     duration = au.duration_seconds(info)
     started = dt.datetime.now()
@@ -175,12 +195,18 @@ def transcribe(source: Path, cfg: Config, log: Logger) -> dict:
         wav = au.to_wav16k(source, Path(tmp) / "audio16k.wav")
         log(f"  · audio preparado ({fmt_hms(duration)})")
 
-        asr_options = {"initial_prompt": prompt} if prompt else None
+        asr_options: dict[str, Any] = {}
+        if prompt:
+            asr_options["initial_prompt"] = prompt
+        if vocabulario:
+            # hotwords pesa en todos los segmentos; initial_prompt solo al principio.
+            asr_options["hotwords"] = vocabulario
+            log(f"  · vocabulario: {len(terminos)} termino(s)")
         log(f"  · cargando modelo {model_name} en {device} ({compute_type})")
         # El token tambien lo necesita el VAD de pyannote que usa WhisperX por dentro.
         model = whisperx.load_model(
             model_name, device, compute_type=compute_type,
-            language=language, asr_options=asr_options,
+            language=language, asr_options=asr_options or None,
             use_auth_token=cfg.hf_token,
         )
         wave = whisperx.load_audio(str(wav))
@@ -217,8 +243,11 @@ def transcribe(source: Path, cfg: Config, log: Logger) -> dict:
                 log("  · identificando hablantes (pyannote)")
                 try:
                     kwargs = {}
-                    if int(cfg.diarization.get("num_speakers", 0) or 0) > 0:
-                        kwargs["num_speakers"] = int(cfg.diarization["num_speakers"])
+                    esperados = int(ajustes.get("hablantes") or 0) or int(
+                        cfg.diarization.get("num_speakers", 0) or 0)
+                    if esperados > 0:
+                        kwargs["num_speakers"] = esperados
+                        log(f"  · se esperan {esperados} hablante(s)")
                     else:
                         if int(cfg.diarization.get("min_speakers", 0) or 0) > 0:
                             kwargs["min_speakers"] = int(cfg.diarization["min_speakers"])
@@ -249,6 +278,7 @@ def transcribe(source: Path, cfg: Config, log: Logger) -> dict:
         "device": device,
         "compute_type": compute_type,
         "aligned": aligned,
+        "vocabulario": vocabulario or None,
         "diarization": diar_info,
         "speaker_labels": labels,
         "processed_at": dt.datetime.now().isoformat(timespec="seconds"),

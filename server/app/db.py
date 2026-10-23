@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     error         TEXT,
     duracion      REAL,
     hablantes     INTEGER,
-    idioma        TEXT
+    idioma        TEXT,
+    vocabulario   TEXT,
+    esperados     INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_estado ON jobs(estado, creado);
 CREATE INDEX IF NOT EXISTS idx_jobs_sha    ON jobs(sha256);
@@ -62,10 +64,22 @@ def conexion() -> sqlite3.Connection:
     return con
 
 
+# Columnas anadidas despues de la primera version. SQLite no tiene
+# "ADD COLUMN IF NOT EXISTS", asi que se comprueba y se anade a mano.
+COLUMNAS_NUEVAS = {
+    "vocabulario": "TEXT",
+    "esperados": "INTEGER",
+}
+
+
 def inicializar() -> None:
     config.crear_directorios()
     with conexion() as con:
         con.executescript(ESQUEMA)
+        existentes = {f["name"] for f in con.execute("PRAGMA table_info(jobs)")}
+        for nombre, tipo in COLUMNAS_NUEVAS.items():
+            if nombre not in existentes:
+                con.execute(f"ALTER TABLE jobs ADD COLUMN {nombre} {tipo}")
 
 
 def _fila_a_dict(fila: sqlite3.Row) -> dict[str, Any]:
@@ -73,13 +87,15 @@ def _fila_a_dict(fila: sqlite3.Row) -> dict[str, Any]:
 
 
 def crear_job(*, titulo: str | None, fichero: str, extension: str, bytes_: int,
-              sha256: str) -> dict[str, Any]:
+              sha256: str, vocabulario: str | None = None,
+              esperados: int | None = None) -> dict[str, Any]:
     job_id = nuevo_id()
     with conexion() as con:
         con.execute(
-            "INSERT INTO jobs (id, titulo, fichero, extension, bytes, sha256, estado, creado)"
-            " VALUES (?,?,?,?,?,?,'pendiente',?)",
-            (job_id, titulo, fichero, extension, bytes_, sha256, ahora()),
+            "INSERT INTO jobs (id, titulo, fichero, extension, bytes, sha256, estado,"
+            " creado, vocabulario, esperados) VALUES (?,?,?,?,?,?,'pendiente',?,?,?)",
+            (job_id, titulo, fichero, extension, bytes_, sha256, ahora(),
+             vocabulario, esperados),
         )
     return obtener_job(job_id)  # type: ignore[return-value]
 
@@ -133,6 +149,7 @@ def actualizar(job_id: str, **campos: Any) -> dict[str, Any] | None:
     permitidas = {
         "titulo", "estado", "reclamado", "terminado", "worker",
         "intentos", "error", "duracion", "hablantes", "idioma",
+        "vocabulario", "esperados",
     }
     cambios = {k: v for k, v in campos.items() if k in permitidas}
     if not cambios:

@@ -31,6 +31,7 @@ DEFAULTS: dict = {
         "compute_type": "int8_float16",
         "batch_size": 4,
         "initial_prompt": "",
+        "vocabulario": "",
     },
     "align": {"enabled": True},
     "diarization": {

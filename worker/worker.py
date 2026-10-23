@@ -121,8 +121,11 @@ def procesar(job: dict[str, Any], cfg) -> None:
         log("  descargando audio")
         descargar_audio(job, audio)
 
+        ajustes = {"vocabulario": job.get("vocabulario"),
+                   "hablantes": job.get("esperados")}
         with sin_suspension():
-            datos = pipeline.transcribe(audio, cfg, lambda m: log(f"  {m.strip()}"))
+            datos = pipeline.transcribe(audio, cfg, lambda m: log(f"  {m.strip()}"),
+                                        ajustes=ajustes)
         resultado = construir_resultado(job, datos, carpeta, cfg)
 
         log("  enviando resultado")

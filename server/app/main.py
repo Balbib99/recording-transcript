@@ -105,6 +105,8 @@ def publico(job: dict[str, Any]) -> dict[str, Any]:
         "hablantes": job["hablantes"],
         "idioma": job["idioma"],
         "error": job["error"],
+        "vocabulario": job["vocabulario"],
+        "esperados": job["esperados"],
     }
 
 
@@ -169,6 +171,10 @@ def despertar() -> dict[str, Any]:
 async def subir(
     file: Annotated[UploadFile, File(description="Fichero de audio")],
     titulo: Annotated[str | None, Form()] = None,
+    vocabulario: Annotated[str | None, Form(
+        description="Terminos separados por comas: nombres, marcas, modelos")] = None,
+    esperados: Annotated[int | None, Form(
+        description="Cuantas personas hablan, si se sabe")] = None,
 ) -> dict[str, Any]:
     """Recibe una grabacion y la encola.
 
@@ -221,6 +227,8 @@ async def subir(
         extension=extension,
         bytes_=escritos,
         sha256=sha,
+        vocabulario=(vocabulario or "").strip()[:2000] or None,
+        esperados=esperados if esperados and 1 <= esperados <= 20 else None,
     )
     temporal.rename(ruta_audio(job))
     return {**publico(job), "duplicado": False}
@@ -247,6 +255,37 @@ def detalle(job_id: str) -> dict[str, Any]:
     resultado = config.RESULT_DIR / f"{job_id}.json"
     datos["transcripcion_disponible"] = resultado.is_file()
     return datos
+
+
+@app.post("/api/jobs/{job_id}/ajustes", dependencies=[Protegido])
+def ajustes(job_id: str, datos: dict[str, Any]) -> dict[str, Any]:
+    """Cambia titulo, vocabulario y numero de hablantes antes de transcribir.
+
+    Solo tiene sentido mientras el trabajo espera: una vez transcrito, cambiar
+    estos datos no rehace nada. Para eso hay que reencolarlo.
+    """
+    job = db.obtener_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
+
+    cambios: dict[str, Any] = {}
+    if "titulo" in datos:
+        cambios["titulo"] = (str(datos["titulo"] or "").strip() or None)
+    if "vocabulario" in datos:
+        cambios["vocabulario"] = (str(datos["vocabulario"] or "").strip()[:2000] or None)
+    if "esperados" in datos:
+        try:
+            numero = int(datos["esperados"] or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="'esperados' debe ser un numero")
+        if numero and not 1 <= numero <= 20:
+            raise HTTPException(status_code=400, detail="Entre 1 y 20 hablantes")
+        cambios["esperados"] = numero or None
+
+    actualizado = db.actualizar(job_id, **cambios)
+    aviso = None if job["estado"] == "pendiente" else (
+        "El trabajo ya no esta pendiente: reencolalo para que surtan efecto")
+    return {**publico(actualizado), "aviso": aviso}  # type: ignore[arg-type]
 
 
 @app.get("/api/jobs/{job_id}/audio", dependencies=[Protegido])
@@ -294,7 +333,8 @@ def reclamar(worker: Annotated[str, Form()] = "worker") -> dict[str, Any]:
     if job is None:
         return {"trabajo": None}
     return {"trabajo": {**publico(job), "sha256": job["sha256"],
-                        "intentos": job["intentos"]}}
+                        "intentos": job["intentos"]}}  # publico() ya lleva
+                                                       # vocabulario y esperados
 
 
 @app.post("/api/jobs/{job_id}/resultado", dependencies=[Protegido])
