@@ -9,6 +9,8 @@ existe la app del movil. Abre el tunel SSH el mismo, igual que el worker.
     python worker/cliente.py guardar <id>
     python worker/cliente.py reencolar <id>
     python worker/cliente.py borrar <id>
+    python worker/cliente.py perfiles
+    python worker/cliente.py perfil Empresa --vocabulario "Alfa, Beta"
 """
 
 from __future__ import annotations
@@ -30,12 +32,39 @@ def segundos(valor) -> str:
     return f"{total // 60}:{total % 60:02d}"
 
 
+def buscar_perfil(nombre: str) -> dict | None:
+    """Encuentra un perfil por su nombre (sin importar mayusculas) o por su id."""
+    r = api("GET", "/api/perfiles")
+    if not r.ok:
+        log(f"Error {r.status_code}: {r.text[:200]}")
+        return None
+    buscado = nombre.strip().lower()
+    for perfil in r.json()["perfiles"]:
+        if perfil["id"] == nombre or perfil["nombre"].lower() == buscado:
+            return perfil
+    return None
+
+
+def perfil_o_error(nombre: str) -> dict | None:
+    perfil = buscar_perfil(nombre)
+    if perfil is None:
+        log(f"No hay ningun perfil llamado '{nombre}'. Mira cuales hay con: perfiles")
+    return perfil
+
+
 def cmd_subir(args) -> int:
     ruta = Path(args.fichero).expanduser()
     if not ruta.is_file():
         log(f"No existe: {ruta}")
         return 1
     datos = {}
+    if args.perfil:
+        perfil = perfil_o_error(args.perfil)
+        if perfil is None:
+            return 1
+        datos["perfil"] = perfil["id"]
+    if args.contexto:
+        datos["contexto"] = args.contexto
     if args.titulo:
         datos["titulo"] = args.titulo
     if args.vocabulario:
@@ -118,8 +147,18 @@ def cmd_ajustes(args) -> int:
         datos["esperados"] = args.hablantes
     if args.titulo is not None:
         datos["titulo"] = args.titulo
+    if args.contexto is not None:
+        datos["contexto"] = args.contexto
+    if args.perfil is not None:
+        if args.perfil.strip().lower() in ("", "ninguno", "-"):
+            datos["perfil"] = ""
+        else:
+            perfil = perfil_o_error(args.perfil)
+            if perfil is None:
+                return 1
+            datos["perfil"] = perfil["id"]
     if not datos:
-        log("Indica --vocabulario, --hablantes o --titulo")
+        log("Indica --vocabulario, --hablantes, --titulo, --contexto o --perfil")
         return 1
 
     r = api("POST", f"/api/jobs/{args.id}/ajustes", json=datos)
@@ -129,6 +168,7 @@ def cmd_ajustes(args) -> int:
     job = r.json()
     log(f"{job['id']}  hablantes esperados: {job['esperados'] or '-'}")
     log(f"            vocabulario: {job['vocabulario'] or '-'}")
+    log(f"            contexto: {job.get('contexto') or '-'}")
     if job.get("aviso"):
         log(f"  ! {job['aviso']}")
     return 0
@@ -159,6 +199,61 @@ def cmd_borrar(args) -> int:
     return 0 if r.ok else 1
 
 
+def cmd_perfiles(args) -> int:
+    r = api("GET", "/api/perfiles")
+    if not r.ok:
+        log(f"Error {r.status_code}: {r.text[:200]}")
+        return 1
+    perfiles = r.json()["perfiles"]
+    if not perfiles:
+        log("No hay perfiles. Crea uno con: perfil <nombre> --nuevo")
+        return 0
+    for perfil in perfiles:
+        n = perfil.get("grabaciones") or 0
+        log(f"{perfil['nombre']}  ({n} grabacion{'' if n == 1 else 'es'})")
+        log(f"    vocabulario:   {perfil['vocabulario'] or '-'}")
+        log(f"    participantes: {', '.join(perfil['participantes']) or '-'}")
+    return 0
+
+
+def cmd_perfil(args) -> int:
+    """Crea un perfil o cambia su vocabulario y sus participantes."""
+    datos = {}
+    vocabulario = args.vocabulario
+    if args.desde_config:
+        # Para mudar de una vez el vocabulario general del config.toml a un
+        # perfil, sin tener que copiarlo a mano.
+        from recordingcraft.config import load_config
+        vocabulario = str(load_config().whisper.get("vocabulario") or "")
+    if vocabulario is not None:
+        datos["vocabulario"] = vocabulario
+    if args.participantes is not None:
+        datos["participantes"] = args.participantes
+    if args.renombrar:
+        datos["nombre"] = args.renombrar
+
+    actual = buscar_perfil(args.nombre)
+    if actual is None:
+        if not args.nuevo:
+            log(f"No hay ningun perfil llamado '{args.nombre}'. Para crearlo, anade --nuevo")
+            return 1
+        r = api("POST", "/api/perfiles", json={**datos, "nombre": args.nombre})
+    else:
+        if not datos:
+            log("Indica --vocabulario, --participantes, --desde-config o --renombrar")
+            return 1
+        r = api("PUT", f"/api/perfiles/{actual['id']}", json=datos)
+
+    if not r.ok:
+        log(f"Error {r.status_code}: {r.text[:200]}")
+        return 1
+    perfil = r.json()
+    terminos = [x for x in perfil["vocabulario"].split(",") if x.strip()]
+    log(f"{perfil['nombre']}: {len(terminos)} termino(s), "
+        f"{len(perfil['participantes'])} participante(s)")
+    return 0
+
+
 def main() -> int:
     # Las transcripciones llevan acentos: sin esto, redirigir la salida a un
     # fichero en Windows los rompe.
@@ -175,6 +270,8 @@ def main() -> int:
     p.add_argument("--titulo")
     p.add_argument("--vocabulario", help="terminos separados por comas")
     p.add_argument("--hablantes", type=int, help="cuantas personas hablan")
+    p.add_argument("--perfil", help="nombre del perfil (Empresa, Casa...)")
+    p.add_argument("--contexto", help="de que va la reunion, en una frase")
     p.set_defaults(func=cmd_subir)
 
     p = sub.add_parser("lista", help="estado de la cola")
@@ -195,6 +292,8 @@ def main() -> int:
     p.add_argument("--vocabulario")
     p.add_argument("--hablantes", type=int)
     p.add_argument("--titulo")
+    p.add_argument("--contexto", help="de que va la reunion, en una frase")
+    p.add_argument("--perfil", help="nombre del perfil, o 'ninguno' para quitarlo")
     p.set_defaults(func=cmd_ajustes)
 
     p = sub.add_parser("hablante", help="pone nombre a un hablante")
@@ -206,6 +305,19 @@ def main() -> int:
     p = sub.add_parser("reencolar", help="reintenta un trabajo fallido")
     p.add_argument("id")
     p.set_defaults(func=cmd_reencolar)
+
+    p = sub.add_parser("perfiles", help="lista los perfiles de trabajo")
+    p.set_defaults(func=cmd_perfiles)
+
+    p = sub.add_parser("perfil", help="crea un perfil o cambia su vocabulario y participantes")
+    p.add_argument("nombre")
+    p.add_argument("--nuevo", action="store_true", help="crearlo si no existe")
+    p.add_argument("--vocabulario", help="terminos separados por comas")
+    p.add_argument("--desde-config", action="store_true",
+                   help="usa el vocabulario general de config.toml")
+    p.add_argument("--participantes", help="nombres separados por comas")
+    p.add_argument("--renombrar", help="nuevo nombre del perfil")
+    p.set_defaults(func=cmd_perfil)
 
     p = sub.add_parser("borrar", help="borra trabajo, audio y transcripcion")
     p.add_argument("id")

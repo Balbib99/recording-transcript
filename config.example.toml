@@ -26,9 +26,11 @@ compute_type = "int8_float16"   # GTX 1660 (6 GB): int8_float16. Si da problemas
 batch_size = 4              # bajalo a 2 si te quedas sin VRAM
 # Pista de contexto para mejorar nombres propios y jerga (opcional):
 initial_prompt = ""
-# Terminos que el modelo tiene presentes en TODO el audio, separados por comas.
+# Terminos que el modelo tiene presentes en TODO el audio, de cualquier perfil,
+# separados por comas. Lo normal es dejarlo vacio y poner el vocabulario en cada
+# perfil (Perfiles, en la app), para que solo se aplique a sus grabaciones.
 # Para nombres propios, marcas y modelos que de otro modo transcribe mal:
-# un "Lynx" que sale como "link", o un modelo de aparato que se desarma en silabas.
+# un nombre de marca que sale como una palabra corriente, o un modelo que se desarma en silabas.
 # Pocos y pertinentes: una lista larga empeora el resultado.
 vocabulario = ""
 

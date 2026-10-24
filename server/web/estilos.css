@@ -79,7 +79,8 @@ body {
 
 /* En el detalle la cabecera es una barra blanca pegada arriba, con el titulo
    de la reunion entre los dos botones. */
-#vista-detalle .barra {
+#vista-detalle .barra,
+#vista-perfiles .barra {
   position: sticky;
   top: 0;
   z-index: 5;
@@ -91,7 +92,8 @@ body {
   border-bottom: 1px solid var(--borde);
 }
 
-#vista-detalle .barra h1 {
+#vista-detalle .barra h1,
+#vista-perfiles .barra h1 {
   font-size: .95rem;
   font-weight: 600;
   white-space: nowrap;
@@ -122,7 +124,8 @@ button, .principal {
 }
 .icono:active { background: var(--superficie-alta); }
 
-#vista-detalle .icono {
+#vista-detalle .icono,
+#vista-perfiles .icono {
   background: transparent;
   border-color: transparent;
 }
@@ -586,6 +589,8 @@ input:focus-visible, button:focus-visible, .principal:focus-within, textarea:foc
 
 dialog {
   width: min(92vw, 380px);
+  max-height: 90dvh;
+  overflow-y: auto;
   padding: 20px;
   border: 1px solid var(--borde);
   border-radius: var(--radio);
@@ -672,6 +677,182 @@ dialog input { margin-bottom: 14px; }
 }
 
 .principal[disabled] { opacity: .45; box-shadow: none; cursor: default; }
+
+/* ------------------------------------------------------------- perfiles
+
+   Un perfil es un contexto de trabajo (la empresa, la casa). Cada uno lleva un
+   color, que se reparte por orden y se ve en las etiquetas de la lista. */
+
+:root {
+  --perfil-0: #0e7c66;
+  --perfil-1: #2f5fd0;
+  --perfil-2: #c2501f;
+  --perfil-3: #8b3fc9;
+  --perfil-4: #c0356f;
+  --perfil-5: #1a7ab5;
+}
+.c0 { background: var(--perfil-0); }
+.c1 { background: var(--perfil-1); }
+.c2 { background: var(--perfil-2); }
+.c3 { background: var(--perfil-3); }
+.c4 { background: var(--perfil-4); }
+.c5 { background: var(--perfil-5); }
+
+.punto-perfil { width: 9px; height: 9px; flex-shrink: 0; border-radius: 50%; }
+
+.filtros-fila {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 20px 10px;
+}
+.filtros {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  padding: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.filtros::-webkit-scrollbar { display: none; }
+
+.filtro {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 15px;
+  font-size: .82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--medio);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 99px;
+}
+.filtro[aria-pressed="true"] {
+  color: var(--acento-fuerte);
+  background: var(--acento-suave);
+  border-color: var(--acento-borde);
+}
+.seleccionando #barra-filtros { display: none; }
+
+/* La etiqueta de perfil de una tarjeta o de la cabecera de una reunion */
+.etiqueta-perfil {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 9px;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: .68rem;
+  font-weight: 600;
+  border-radius: 99px;
+  vertical-align: 1px;
+}
+
+/* Opciones tipo boton, con un radio de verdad por debajo: se pueden recorrer
+   con el teclado y las lee un lector de pantalla. */
+.opciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.opcion { position: relative; }
+.opcion input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.opcion input + span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 15px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--medio);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 99px;
+}
+.opcion input:checked + span {
+  color: var(--acento-fuerte);
+  background: var(--acento-suave);
+  border-color: var(--acento);
+  box-shadow: 0 0 0 1px var(--acento);
+}
+.opcion input:focus-visible + span { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+.extras { margin-bottom: 14px; }
+.extras summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--acento-fuerte);
+  cursor: pointer;
+}
+
+fieldset.grupo { border: 0; padding: 0; margin: 0 0 12px; min-width: 0; }
+fieldset.grupo legend { padding: 0; font-size: .82rem; font-weight: 500; color: var(--apagado); }
+fieldset.grupo .pista { margin: 8px 0 0; }
+
+/* Elegir el perfil al compartir: botones grandes, de un toque */
+.perfiles-botones { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.perfil-boton {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 0 16px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-medio);
+}
+.perfil-boton:active { background: var(--superficie-alta); }
+.perfil-boton .nota { margin-left: auto; font-size: .72rem; font-weight: 500; color: var(--apagado); }
+.perfil-boton.actual { border-color: var(--acento); box-shadow: 0 0 0 1px var(--acento); }
+.perfil-boton.ninguno { color: var(--medio); font-weight: 500; }
+
+/* Nombres habituales al poner nombre a una voz */
+.sugerencias { margin-bottom: 14px; }
+.sugerencias-titulo { display: block; font-size: .75rem; }
+.sugerencias .opcion-boton {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--acento-fuerte);
+  background: var(--acento-suave);
+  border: 1px solid var(--acento-borde);
+  border-radius: 99px;
+}
+
+.intro-perfiles { margin: 0 20px 14px; font-size: .85rem; }
+#vista-perfiles .barra .compacto { margin-right: 8px; }
+#vista-perfiles .tarjeta h2 { align-items: center; }
+.perfil-datos { margin-top: 8px; font-size: .78rem; color: var(--apagado); line-height: 1.5; }
+.perfil-datos strong { color: var(--medio); font-weight: 600; }
+
+.enlace-peligro {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--error);
+  background: transparent;
+  border: none;
+}
 
 /* Menu de acciones de una grabacion y confirmacion de borrado */
 .acciones-lista { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }

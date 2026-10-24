@@ -93,6 +93,8 @@ def construir_resultado(job: dict[str, Any], datos: dict[str, Any],
         "idioma": datos.get("language"),
         "duracion": datos.get("duration"),
         "modelo": datos.get("model"),
+        "vocabulario": datos.get("vocabulario"),   # lo que de verdad se aplico
+        "contexto": datos.get("contexto"),
         "diarizacion": datos.get("diarization"),
         "procesado_por": WORKER,
         "procesado_en": datos.get("processed_at"),
@@ -121,8 +123,10 @@ def procesar(job: dict[str, Any], cfg) -> None:
         log("  descargando audio")
         descargar_audio(job, audio)
 
-        ajustes = {"vocabulario": job.get("vocabulario"),
-                   "hablantes": job.get("esperados")}
+        # La Pi ya trae sumado el vocabulario del perfil y el de la reunion.
+        ajustes = {"vocabulario": job.get("vocabulario_total") or job.get("vocabulario"),
+                   "hablantes": job.get("esperados"),
+                   "contexto": job.get("contexto")}
         with sin_suspension():
             datos = pipeline.transcribe(audio, cfg, lambda m: log(f"  {m.strip()}"),
                                         ajustes=ajustes)

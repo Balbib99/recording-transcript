@@ -157,6 +157,9 @@ def transcribe(source: Path, cfg: Config, log: Logger,
       vocabulario: terminos que el modelo tiene presentes en todo el audio
                    (nombres propios, modelos de aparatos, jerga del sector)
       hablantes:   cuantas personas hay, si se sabe
+      contexto:    de que va esta reunion, en una frase. Se suma a la
+                   initial_prompt general. Pesa menos que el vocabulario: solo
+                   condiciona la primera ventana de audio.
     """
     ajustes = ajustes or {}
     import whisperx
@@ -173,7 +176,8 @@ def transcribe(source: Path, cfg: Config, log: Logger,
     language = None if language in ("", "auto") else language
     batch_size = int(wcfg.get("batch_size", 4))
     model_name = str(wcfg.get("model", "large-v3"))
-    prompt = str(wcfg.get("initial_prompt") or "").strip()
+    contexto = str(ajustes.get("contexto") or "").strip()
+    prompt = " ".join(p for p in (str(wcfg.get("initial_prompt") or "").strip(), contexto) if p)
 
     # El vocabulario de la reunion se suma al general, sin repetir terminos.
     terminos: list[str] = []
@@ -279,6 +283,7 @@ def transcribe(source: Path, cfg: Config, log: Logger,
         "compute_type": compute_type,
         "aligned": aligned,
         "vocabulario": vocabulario or None,
+        "contexto": contexto or None,
         "diarization": diar_info,
         "speaker_labels": labels,
         "processed_at": dt.datetime.now().isoformat(timespec="seconds"),

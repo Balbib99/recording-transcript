@@ -160,18 +160,18 @@ with TestClient(app) as c:
 
     print("\n-- renombrar --")
     r = c.post(f"/api/jobs/{job_id}/ajustes", headers=AUTH,
-               json={"titulo": "  Instalacion Lynx  "})
+               json={"titulo": "  Instalacion Norte  "})
     comprobar("renombrar una reunion ya hecha da 200", r.status_code == 200, r.text)
     comprobar("el titulo se guarda sin espacios sobrantes",
-              r.json()["titulo"] == "Instalacion Lynx", r.json()["titulo"])
+              r.json()["titulo"] == "Instalacion Norte", r.json()["titulo"])
     comprobar("cambiar solo el nombre no da aviso falso",
               r.json().get("aviso") is None, r.json().get("aviso"))
 
     guardada = c.get(f"/api/jobs/{job_id}/transcripcion", headers=AUTH).json()
     comprobar("el JSON guardado lleva el nombre nuevo",
-              guardada.get("titulo") == "Instalacion Lynx", guardada.get("titulo"))
+              guardada.get("titulo") == "Instalacion Norte", guardada.get("titulo"))
     comprobar("el Markdown tambien",
-              guardada.get("markdown", "").startswith("# Instalacion Lynx"),
+              guardada.get("markdown", "").startswith("# Instalacion Norte"),
               guardada.get("markdown", "")[:40])
     comprobar("y las voces no se tocan", [h["nombre"] for h in guardada["hablantes"]]
               == ["Javi", "Marta"], guardada["hablantes"])
@@ -181,7 +181,7 @@ with TestClient(app) as c:
               len(r.json()["titulo"]))
 
     r = c.post(f"/api/jobs/{job_id}/ajustes", headers=AUTH,
-               json={"vocabulario": "Lynx"})
+               json={"vocabulario": "Alfa"})
     comprobar("el vocabulario de una reunion hecha si avisa",
               bool(r.json().get("aviso")), r.json().get("aviso"))
 
@@ -209,6 +209,104 @@ with TestClient(app) as c:
     comprobar("se puede borrar un trabajo en proceso",
               c.delete(f"/api/jobs/{restante['id']}", headers=AUTH).status_code == 200)
     comprobar("la cola queda vacia", c.get("/api/jobs", headers=AUTH).json()["total"] == 0)
+
+    print("\n-- perfiles --")
+    r = c.get("/api/perfiles", headers=AUTH)
+    nombres = [x["nombre"] for x in r.json()["perfiles"]]
+    comprobar("arrancan los dos perfiles de partida", nombres == ["Empresa", "Casa"], nombres)
+    comprobar("y vacios: nada de nadie viaja en el codigo",
+              all(not x["vocabulario"] and not x["participantes"] for x in r.json()["perfiles"]))
+    empresa, casa = r.json()["perfiles"]
+    comprobar("cada uno con su color", empresa["color"] != casa["color"],
+              (empresa["color"], casa["color"]))
+    comprobar("sin token no se listan",
+              c.get("/api/perfiles").status_code == 401)
+
+    # Terminos escritos a mano: comas, saltos de linea, huecos y repetidos.
+    r = c.put(f"/api/perfiles/{empresa['id']}", headers=AUTH, json={
+        "vocabulario": "Alfa,  Beta Gamma" + chr(10) + "alfa, , Delta",
+        "participantes": "Javi, Marta" + chr(10) + "javi",
+    })
+    comprobar("editar un perfil da 200", r.status_code == 200, r.text)
+    comprobar("el vocabulario se normaliza y no repite",
+              r.json()["vocabulario"] == "Alfa, Beta Gamma, Delta", r.json()["vocabulario"])
+    comprobar("los participantes tambien",
+              r.json()["participantes"] == ["Javi", "Marta"], r.json()["participantes"])
+
+    r = c.put(f"/api/perfiles/{empresa['id']}", headers=AUTH, json={"nombre": "  casa "})
+    comprobar("no se admiten dos perfiles con el mismo nombre", r.status_code == 409, r.status_code)
+    r = c.put(f"/api/perfiles/{empresa['id']}", headers=AUTH, json={"nombre": "   "})
+    comprobar("un nombre vacio da 400", r.status_code == 400, r.status_code)
+    r = c.put("/api/perfiles/noexiste", headers=AUTH, json={"nombre": "x"})
+    comprobar("editar uno inexistente da 404", r.status_code == 404, r.status_code)
+
+    r = c.post("/api/perfiles", headers=AUTH, json={"nombre": "Proyecto X", "vocabulario": "Foo"})
+    comprobar("crear un perfil da 201", r.status_code == 201, r.text)
+    proyecto = r.json()
+    comprobar("y recibe el siguiente color", proyecto["color"] not in (empresa["color"], casa["color"]),
+              proyecto["color"])
+
+    print("\n-- grabaciones con perfil --")
+    audio2 = b"RIFF....otro audio...." * 100
+    r = c.post("/api/jobs", headers=AUTH, files={"file": ("a.m4a", audio2, "audio/mp4")},
+               data={"titulo": "Con perfil", "perfil": empresa["id"], "vocabulario": "Epsilon, alfa",
+                     "contexto": "  Reunion de administracion  "})
+    comprobar("subir con perfil da 201", r.status_code == 201, r.text)
+    con_perfil = r.json()
+    comprobar("queda asociado", con_perfil["perfil"] == empresa["id"], con_perfil["perfil"])
+    comprobar("y guarda el contexto sin espacios",
+              con_perfil["contexto"] == "Reunion de administracion", con_perfil["contexto"])
+
+    r = c.post("/api/jobs", headers=AUTH, files={"file": ("b.m4a", b"otro mas" * 50, "audio/mp4")},
+               data={"perfil": "noexiste"})
+    comprobar("subir a un perfil que no existe da 400", r.status_code == 400, r.status_code)
+    comprobar("y no deja el audio a medias en disco",
+              not list((TMP / "audio").glob(".subiendo-*")))
+
+    # El worker recibe el vocabulario del perfil y el de la reunion, sumados.
+    from app import db as _db
+    for pendiente in c.get("/api/jobs?estado=pendiente", headers=AUTH).json()["trabajos"]:
+        if pendiente["id"] != con_perfil["id"]:
+            _db.actualizar(pendiente["id"], estado="hecho")
+    r = c.post("/api/worker/reclamar", headers=AUTH, data={"worker": "prueba"})
+    trabajo = r.json()["trabajo"]
+    comprobar("el worker reclama el que tiene perfil", trabajo and trabajo["id"] == con_perfil["id"], trabajo)
+    comprobar("y recibe perfil mas reunion, sin repetir",
+              trabajo["vocabulario_total"] == "Alfa, Beta Gamma, Delta, Epsilon",
+              trabajo["vocabulario_total"])
+    comprobar("el de la reunion sigue siendo solo el suyo",
+              trabajo["vocabulario"] == "Epsilon, alfa", trabajo["vocabulario"])
+
+    r = c.post(f"/api/jobs/{con_perfil['id']}/ajustes", headers=AUTH, json={"perfil": casa["id"]})
+    comprobar("cambiar el perfil de una reunion en marcha da 200", r.status_code == 200, r.text)
+    comprobar("sin aviso falso: es una etiqueta", r.json().get("aviso") is None, r.json().get("aviso"))
+    r = c.post(f"/api/jobs/{con_perfil['id']}/ajustes", headers=AUTH, json={"perfil": "noexiste"})
+    comprobar("a un perfil inexistente da 400", r.status_code == 400, r.status_code)
+    r = c.post(f"/api/jobs/{con_perfil['id']}/ajustes", headers=AUTH, json={"perfil": ""})
+    comprobar("quitar el perfil se puede", r.json()["perfil"] is None, r.json()["perfil"])
+    r = c.post(f"/api/jobs/{con_perfil['id']}/ajustes", headers=AUTH, json={"contexto": "Otra cosa"})
+    comprobar("el contexto de una en marcha si avisa", bool(r.json().get("aviso")), r.json().get("aviso"))
+
+    print("\n-- borrar un perfil --")
+    c.post(f"/api/jobs/{con_perfil['id']}/ajustes", headers=AUTH, json={"perfil": proyecto["id"]})
+    cuentas = {x["id"]: x["grabaciones"] for x in c.get("/api/perfiles", headers=AUTH).json()["perfiles"]}
+    comprobar("el listado cuenta las grabaciones de cada perfil", cuentas[proyecto["id"]] == 1, cuentas)
+    r = c.delete(f"/api/perfiles/{proyecto['id']}", headers=AUTH)
+    comprobar("borrar un perfil da 200", r.status_code == 200, r.text)
+    comprobar("y dice a cuantas grabaciones deja sin perfil",
+              r.json()["grabaciones_sin_perfil"] == 1, r.json())
+    sigue = c.get(f"/api/jobs/{con_perfil['id']}", headers=AUTH).json()
+    comprobar("la grabacion no se pierde: solo se queda sin perfil",
+              sigue["perfil"] is None and sigue["estado"] == "procesando", sigue)
+    comprobar("borrarlo dos veces da 404",
+              c.delete(f"/api/perfiles/{proyecto['id']}", headers=AUTH).status_code == 404)
+
+    # Quien borra todos sus perfiles no quiere que reaparezcan al reiniciar.
+    for x in c.get("/api/perfiles", headers=AUTH).json()["perfiles"]:
+        c.delete(f"/api/perfiles/{x['id']}", headers=AUTH)
+    _db.inicializar()
+    comprobar("los de partida no se resiembran al reiniciar",
+              c.get("/api/perfiles", headers=AUTH).json()["perfiles"] == [])
 
 print("\n" + ("TODO OK" if not fallos else f"{len(fallos)} FALLOS: {fallos}"))
 sys.exit(1 if fallos else 0)

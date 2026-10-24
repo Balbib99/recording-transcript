@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="iconos/icono-192.png">
 <link rel="apple-touch-icon" href="iconos/icono-192.png">
-<link rel="stylesheet" href="estilos.css?v=7">
+<link rel="stylesheet" href="estilos.css?v=8">
 </head>
 <body>
 
@@ -93,9 +93,21 @@
     </button>
   </div>
 
+  <div id="barra-filtros" class="filtros-fila oculto">
+    <div id="filtros" class="filtros" role="group" aria-label="Filtrar por perfil"></div>
+    <button id="boton-perfiles" class="icono" aria-label="Gestionar perfiles">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <path d="M4 7h9M17 7h3M4 17h3M11 17h9"></path>
+        <circle cx="15" cy="7" r="2"></circle><circle cx="9" cy="17" r="2"></circle>
+      </svg>
+    </button>
+  </div>
+
   <div id="lista" class="lista"></div>
   <p id="lista-vacia" class="vacio oculto">
-    Todavía no hay grabaciones.<br><span class="apagado">Sube la primera con el botón de abajo.</span>
+    <span id="vacio-titulo">Todavía no hay grabaciones.</span><br>
+    <span class="apagado" id="vacio-detalle">Sube la primera con el botón de abajo.</span>
   </p>
 
   <div id="pie-subida" class="pie">
@@ -117,6 +129,23 @@
     <div class="progreso-texto"><span id="progreso-nombre"></span> <span id="progreso-pct"></span></div>
     <div class="progreso-barra"><div id="progreso-relleno"></div></div>
   </div>
+</section>
+
+<!-- Perfiles de trabajo -->
+<section id="vista-perfiles" class="vista oculto">
+  <header class="barra">
+    <button id="perfiles-volver" class="icono" aria-label="Volver a la lista">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+        <path d="M15 5l-7 7 7 7"></path>
+      </svg>
+    </button>
+    <h1>Perfiles</h1>
+    <button id="perfil-nuevo" class="secundario compacto">Nuevo</button>
+  </header>
+  <p class="intro-perfiles apagado">Cada perfil lleva su propio vocabulario y la gente con la
+    que sueles hablar. Al subir una grabación eliges en cuál va.</p>
+  <div id="lista-perfiles" class="lista"></div>
 </section>
 
 <!-- Detalle de una reunion -->
@@ -158,6 +187,13 @@
         <path d="M4 20h4L19 9a2.1 2.1 0 0 0-4-4L4 16v4z"></path><path d="M13.5 6.5l4 4"></path>
       </svg>
       Cambiar el nombre
+    </button>
+    <button type="button" id="accion-perfil" class="accion oculto">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 12V4h8l10 10-8 8L3 12z"></path><circle cx="7.5" cy="8.5" r="1.3"></circle>
+      </svg>
+      Cambiar de perfil
     </button>
     <button type="button" id="accion-borrar" class="accion peligro">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -207,17 +243,33 @@
       <input type="text" id="campo-titulo" autocomplete="off" maxlength="80">
     </label>
 
+    <fieldset class="campo grupo" id="ajustes-grupo-perfil">
+      <legend>Perfil</legend>
+      <div id="ajustes-perfiles" class="opciones"></div>
+      <p class="pista apagado" id="ajustes-vocab-perfil"></p>
+    </fieldset>
+
+    <details class="extras" id="ajustes-extras">
+      <summary>Personas, contexto y vocabulario de esta reunión</summary>
     <label class="campo">Cuántas personas hablan <span class="apagado">(opcional)</span>
       <input type="number" id="campo-hablantes" min="1" max="20" inputmode="numeric"
              placeholder="lo averigua solo">
     </label>
 
-    <label class="campo">Vocabulario <span class="apagado">(opcional)</span>
-      <textarea id="campo-vocabulario" rows="2" maxlength="2000"
-                placeholder="Nombres, marcas, modelos: Lynx, Vanderbilt SPC..."></textarea>
+    <label class="campo">De qué va <span class="apagado">(opcional)</span>
+      <input type="text" id="campo-contexto" maxlength="300" autocomplete="off"
+             placeholder="Una frase: una visita de obra, una llamada comercial...">
     </label>
-    <p class="pista apagado">Términos que el modelo tendrá presentes. Pocos y
-      pertinentes: una lista larga empeora el resultado.</p>
+    <p class="pista apagado">Solo condiciona el arranque de la transcripción. Lo que
+      más ayuda son los términos de aquí abajo.</p>
+
+    <label class="campo">Vocabulario de esta reunión <span class="apagado">(opcional)</span>
+      <textarea id="campo-vocabulario" rows="2" maxlength="2000"
+                placeholder="Modelos, nombres, marcas de esta reunión..."></textarea>
+    </label>
+    <p class="pista apagado">Se suma al del perfil. Pocos y pertinentes: una lista
+      larga empeora el resultado.</p>
+    </details>
 
     <div class="dialogo-botones">
       <button value="cancelar" class="secundario">Cancelar</button>
@@ -230,6 +282,10 @@
   <form method="dialog" id="form-hablante">
     <h2 id="dialogo-titulo">Quién habla</h2>
     <p class="apagado" id="dialogo-pista"></p>
+    <div id="nombre-sugerencias" class="sugerencias oculto">
+      <span class="sugerencias-titulo apagado" id="sugerencias-titulo"></span>
+      <div id="sugerencias-botones" class="opciones"></div>
+    </div>
     <input type="text" id="campo-nombre" placeholder="Nombre" autocomplete="off"
            maxlength="60" enterkeyhint="done">
     <div class="dialogo-botones">
@@ -239,8 +295,69 @@
   </form>
 </dialog>
 
+<dialog id="dialogo-compartido">
+  <form method="dialog" id="form-compartido">
+    <h2>¿A qué perfil va?</h2>
+    <p class="apagado" id="compartido-fichero"></p>
+    <div id="compartido-perfiles" class="perfiles-botones"></div>
+    <div class="dialogo-botones">
+      <button value="cancelar" class="secundario">Cancelar</button>
+      <button value="ajustes" class="secundario">Más ajustes</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dialogo-cambiar-perfil">
+  <form method="dialog" id="form-cambiar-perfil">
+    <h2>Cambiar de perfil</h2>
+    <p class="apagado" id="cambiar-perfil-pista"></p>
+    <div id="cambiar-perfil-botones" class="perfiles-botones"></div>
+    <div class="dialogo-botones">
+      <button value="cancelar" class="secundario">Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dialogo-perfil">
+  <form method="dialog" id="form-perfil">
+    <h2 id="perfil-titulo">Nuevo perfil</h2>
+    <label class="campo">Nombre
+      <input type="text" id="campo-perfil-nombre" maxlength="40" autocomplete="off"
+             required enterkeyhint="done">
+    </label>
+    <label class="campo">Vocabulario
+      <textarea id="campo-perfil-vocabulario" rows="5" maxlength="2000"
+                placeholder="Productos, marcas, jerga: separados por comas"></textarea>
+    </label>
+    <p class="pista apagado" id="perfil-cuenta">Pocos y pertinentes: una lista larga
+      empeora el resultado.</p>
+    <label class="campo">Gente con la que sueles hablar
+      <textarea id="campo-perfil-participantes" rows="2" maxlength="600"
+                placeholder="Javi, Marta..."></textarea>
+    </label>
+    <p class="pista apagado">Salen como botones al poner nombre a una voz.</p>
+    <div class="dialogo-botones">
+      <button value="cancelar" class="secundario" formnovalidate>Cancelar</button>
+      <button value="guardar" class="principal" id="perfil-aceptar">Guardar</button>
+    </div>
+    <button type="button" id="perfil-eliminar" class="enlace-peligro oculto">Eliminar este perfil</button>
+  </form>
+</dialog>
+
+<dialog id="dialogo-borrar-perfil">
+  <form method="dialog" id="form-borrar-perfil">
+    <h2>¿Eliminar este perfil?</h2>
+    <div class="borrar-titulo" id="borrar-perfil-nombre"></div>
+    <p class="apagado" id="borrar-perfil-aviso"></p>
+    <div class="dialogo-botones">
+      <button value="cancelar" class="secundario">Cancelar</button>
+      <button value="borrar" class="principal peligro-boton">Eliminar</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="aviso" class="aviso oculto"></div>
 
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

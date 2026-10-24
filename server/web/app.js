@@ -5,6 +5,9 @@ const $ = (sel) => document.querySelector(sel);
 
 const CLAVE_TOKEN = 'rc_token';
 const CLAVE_CACHE = 'rc_ultima_lista';
+const CLAVE_PERFILES = 'rc_perfiles';   // copia de los perfiles, para abrir sin red
+const CLAVE_PERFIL = 'rc_perfil';       // el ultimo perfil al que se subio algo
+const CLAVE_FILTRO = 'rc_filtro';       // por que perfil se filtra la lista
 
 let token = localStorage.getItem(CLAVE_TOKEN) || '';
 let temporizador = null;
@@ -13,6 +16,16 @@ let trabajoAbierto = null;  // el job de la pantalla de detalle, este hecho o no
 let seleccion = null;       // Set de ids mientras se eligen grabaciones; null fuera de ese modo
 let ultimosDatos = { trabajos: [] };   // lo ultimo que se pinto en la lista
 let borradoPendiente = null;           // { ids, desdeDetalle } esperando confirmacion
+let perfiles = [];                // los perfiles de trabajo, tal como los da la Pi
+let perfilesCargados = false;     // false mientras no se sepa si el servidor los tiene
+let filtro = '';                  // '' todas, 'ninguno' sin perfil, o el id de un perfil
+let compartidoPendiente = null;   // { fichero, titulo } esperando que se elija perfil
+
+try {
+  const guardados = JSON.parse(localStorage.getItem(CLAVE_PERFILES) || 'null');
+  if (Array.isArray(guardados)) { perfiles = guardados; perfilesCargados = true; }
+  filtro = localStorage.getItem(CLAVE_FILTRO) || '';
+} catch { /* sin almacenamiento: se empieza de cero */ }
 
 /* El token se puede pasar en la URL (?token=...) para no teclear 64 caracteres
    en el movil. Se guarda y se borra de la barra de direcciones en el acto, para
@@ -86,7 +99,7 @@ async function api(ruta, opciones = {}) {
 // ------------------------------------------------------------- navegacion
 
 function mostrar(vista) {
-  for (const v of ['token', 'lista', 'detalle']) {
+  for (const v of ['token', 'lista', 'detalle', 'perfiles']) {
     $(`#vista-${v}`).classList.toggle('oculto', v !== vista);
   }
 }
@@ -104,10 +117,108 @@ function enrutar() {
   const ruta = location.hash.slice(1);
   if (ruta.startsWith('/j/')) {
     abrirDetalle(ruta.slice(3));
+  } else if (ruta === '/perfiles') {
+    abrirPerfiles();
   } else {
     mostrar('lista');
     cargarLista();
   }
+}
+
+// ---------------------------------------------------------------- perfiles
+
+const perfilDe = (id) => perfiles.find((p) => p.id === id) || null;
+
+/* Suma listas de terminos separados por comas, sin repetir. */
+function unirTerminos(...listas) {
+  const vistos = new Set();
+  const salida = [];
+  for (const lista of listas) {
+    for (const bruto of String(lista || '').split(',')) {
+      const termino = bruto.trim();
+      if (termino && !vistos.has(termino.toLowerCase())) {
+        vistos.add(termino.toLowerCase());
+        salida.push(termino);
+      }
+    }
+  }
+  return salida;
+}
+
+function ultimoPerfil() {
+  try {
+    const id = localStorage.getItem(CLAVE_PERFIL);
+    return perfilDe(id) ? id : '';
+  } catch { return ''; }
+}
+
+function recordarPerfil(id) {
+  try { if (id) localStorage.setItem(CLAVE_PERFIL, id); } catch { /* modo privado */ }
+}
+
+async function cargarPerfiles() {
+  try {
+    const datos = await api('/perfiles');
+    perfiles = datos.perfiles || [];
+    perfilesCargados = true;
+    try { localStorage.setItem(CLAVE_PERFILES, JSON.stringify(perfiles)); } catch { /* sin espacio */ }
+    return true;
+  } catch {
+    // Sin red, o un servidor que aun no conoce los perfiles: se sigue con lo
+    // que hubiera guardado, y la app se comporta como antes.
+    return false;
+  }
+}
+
+function etiquetaPerfil(perfil) {
+  const etiqueta = document.createElement('span');
+  etiqueta.className = `etiqueta-perfil voz-${perfil.color % 6}`;
+  etiqueta.textContent = perfil.nombre;
+  return etiqueta;
+}
+
+function visibles() {
+  const todas = ultimosDatos.trabajos;
+  if (!filtro) return todas;
+  if (filtro === 'ninguno') return todas.filter((t) => !t.perfil);
+  return todas.filter((t) => t.perfil === filtro);
+}
+
+function pintarFiltros() {
+  const barra = $('#barra-filtros');
+  if (!barra) return;
+  barra.classList.toggle('oculto', !perfilesCargados);
+
+  const caja = $('#filtros');
+  caja.textContent = '';
+  if (!perfiles.length) return;
+
+  const opciones = [{ id: '', nombre: 'Todas' }, ...perfiles];
+  // Las grabaciones anteriores a los perfiles no tienen ninguno: hace falta un
+  // sitio donde encontrarlas para asignarselo.
+  if (ultimosDatos.trabajos.some((t) => !t.perfil)) {
+    opciones.push({ id: 'ninguno', nombre: 'Sin perfil' });
+  }
+  for (const opcion of opciones) {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'filtro';
+    boton.setAttribute('aria-pressed', String(filtro === opcion.id));
+    if (opcion.color !== undefined) {
+      const punto = document.createElement('span');
+      punto.className = `punto-perfil c${opcion.color % 6}`;
+      boton.append(punto);
+    }
+    boton.append(opcion.nombre);
+    boton.onclick = () => elegirFiltro(opcion.id);
+    caja.append(boton);
+  }
+}
+
+function elegirFiltro(id) {
+  filtro = id;
+  try { localStorage.setItem(CLAVE_FILTRO, filtro); } catch { /* modo privado */ }
+  pintarLista(ultimosDatos);
 }
 
 // ---------------------------------------------------------------- listado
@@ -124,6 +235,10 @@ function pintarLista(datos) {
   ultimosDatos = datos;
   pintarEstadoPC(datos.worker);
 
+  // Un filtro que apunta a un perfil que ya no existe vuelve a "todas".
+  if (perfilesCargados && filtro && filtro !== 'ninguno' && !perfilDe(filtro)) filtro = '';
+  pintarFiltros();
+
   // Si algo elegido ya no esta (se borro desde otro sitio), se descarta.
   if (seleccion) {
     const vivas = new Set(trabajos.map((t) => t.id));
@@ -132,7 +247,8 @@ function pintarLista(datos) {
   const contenedor = $('#lista');
   contenedor.innerHTML = '';
 
-  const total = trabajos.length;
+  const lista = visibles();
+  const total = lista.length;
   $('#resumen').textContent = `${total} ${total === 1 ? 'grabación' : 'grabaciones'}`;
 
   if (resumen) {
@@ -146,8 +262,15 @@ function pintarLista(datos) {
   }
 
   $('#lista-vacia').classList.toggle('oculto', total > 0);
+  if (total === 0) {
+    const filtrada = trabajos.length > 0;
+    $('#vacio-titulo').textContent = filtrada
+      ? 'No hay grabaciones en este perfil.' : 'Todavía no hay grabaciones.';
+    $('#vacio-detalle').textContent = filtrada
+      ? 'Prueba con otro perfil, o con Todas.' : 'Sube la primera con el botón de abajo.';
+  }
 
-  for (const t of trabajos) contenedor.append(tarjetaDe(t));
+  for (const t of lista) contenedor.append(tarjetaDe(t));
   if (seleccion) actualizarSeleccion();
 }
 
@@ -202,6 +325,9 @@ function tarjetaDe(t) {
   const meta = document.createElement('div');
   meta.className = 'meta-mono';
   meta.textContent = partes.filter(Boolean).join(' · ');
+  // Con la lista filtrada por un perfil la etiqueta sobra: todas serian la misma.
+  const perfil = filtro ? null : perfilDe(t.perfil);
+  if (perfil) meta.append(etiquetaPerfil(perfil));
   caja.append(meta);
 
   if (t.estado === 'procesando') {
@@ -268,6 +394,7 @@ async function cargarLista(silencioso = false) {
     const [lista, estado] = await Promise.all([
       api('/jobs?limite=100'),
       api('/estado'),
+      cargarPerfiles(),
     ]);
     const datos = { trabajos: lista.trabajos, resumen: estado.trabajos,
                     worker: estado.worker };
@@ -301,7 +428,8 @@ function programarRefresco(trabajos) {
 
 let ajustesPendientes = null;   // { fichero } al subir, o { job } al editar
 
-function pedirAjustes(fichero = null, job = null) {
+function pedirAjustes(fichero = null, job = null, perfilInicial = null, tituloInicial = null,
+                      abrirExtras = false) {
   const dialogo = $('#dialogo-ajustes');
   ajustesPendientes = { fichero, job };
 
@@ -312,27 +440,74 @@ function pedirAjustes(fichero = null, job = null) {
     : 'Se aplicarán cuando el worker la coja';
   $('#ajustes-aceptar').textContent = subiendo ? 'Subir' : 'Guardar';
 
-  $('#campo-titulo').value = subiendo
-    ? fichero.name.replace(/\.[^.]+$/, '')
-    : (job.titulo || '');
+  if (subiendo) {
+    const punto = fichero.name.lastIndexOf('.');
+    const sinExtension = punto > 0 ? fichero.name.slice(0, punto) : fichero.name;
+    $('#campo-titulo').value = tituloInicial || sinExtension;
+  } else {
+    $('#campo-titulo').value = job.titulo || '';
+  }
   $('#campo-hablantes').value = job?.esperados || '';
-  $('#campo-vocabulario').value = job?.vocabulario || vocabularioRecordado();
+  $('#campo-contexto').value = job?.contexto || '';
+  $('#campo-vocabulario').value = job?.vocabulario || '';
+  $('#ajustes-extras').open = abrirExtras
+    || Boolean(job && (job.esperados || job.contexto || job.vocabulario));
+
+  // Al subir se propone el ultimo perfil usado (o el primero); al editar, el suyo.
+  const propuesto = perfilInicial ?? (ultimoPerfil() || perfiles[0]?.id || '');
+  pintarOpcionesDePerfil(subiendo ? propuesto : (job.perfil || ''));
 
   dialogo.showModal();
 }
 
-/* El vocabulario suele repetirse entre reuniones del mismo tema, asi que se
-   propone el ultimo usado. Se queda en el dispositivo. */
-function vocabularioRecordado() {
-  try { return localStorage.getItem('rc_vocabulario') || ''; } catch { return ''; }
+const perfilElegido = () => $('#ajustes-perfiles input:checked')?.value || '';
+
+/* Radios de verdad con aspecto de botones: un perfil por opcion, y "Ninguno". */
+function pintarOpcionesDePerfil(elegido) {
+  $('#ajustes-grupo-perfil').classList.toggle('oculto', !perfiles.length);
+  const caja = $('#ajustes-perfiles');
+  caja.textContent = '';
+  const valido = perfilDe(elegido) ? elegido : '';
+
+  const opciones = [...perfiles, { id: '', nombre: 'Ninguno' }];
+  for (const opcion of opciones) {
+    const etiqueta = document.createElement('label');
+    etiqueta.className = 'opcion';
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'perfil';
+    radio.value = opcion.id;
+    radio.checked = opcion.id === valido;
+    const texto = document.createElement('span');
+    if (opcion.color !== undefined) {
+      const punto = document.createElement('span');
+      punto.className = `punto-perfil c${opcion.color % 6}`;
+      texto.append(punto);
+    }
+    texto.append(opcion.nombre);
+    etiqueta.append(radio, texto);
+    caja.append(etiqueta);
+  }
+  actualizarVocabularioDelPerfil();
 }
 
-function recordarVocabulario(valor) {
-  try {
-    if (valor) localStorage.setItem('rc_vocabulario', valor);
-    else localStorage.removeItem('rc_vocabulario');
-  } catch { /* modo privado */ }
+/* Debajo de los botones: que vocabulario aporta el perfil elegido, para saber
+   que ya esta puesto y no repetirlo en el de la reunion. */
+function actualizarVocabularioDelPerfil() {
+  const nota = $('#ajustes-vocab-perfil');
+  const perfil = perfilDe(perfilElegido());
+  if (!perfil) { nota.textContent = ''; return; }
+  const terminos = unirTerminos(perfil.vocabulario);
+  if (!terminos.length) {
+    nota.textContent = `${perfil.nombre} aún no tiene vocabulario. Puedes ponérselo en Perfiles.`;
+    return;
+  }
+  const resto = terminos.length - 8;
+  nota.textContent = `Vocabulario de ${perfil.nombre}: ${terminos.slice(0, 8).join(', ')}`
+    + (resto > 0 ? ` y ${resto} más.` : '.');
 }
+
+$('#ajustes-perfiles')?.addEventListener('change', actualizarVocabularioDelPerfil);
 
 async function confirmarAjustes() {
   if (!ajustesPendientes) return;
@@ -340,19 +515,23 @@ async function confirmarAjustes() {
   const titulo = $('#campo-titulo').value.trim();
   const hablantes = $('#campo-hablantes').value.trim();
   const vocabulario = $('#campo-vocabulario').value.trim();
-  recordarVocabulario(vocabulario);
+  const contexto = $('#campo-contexto').value.trim();
+  const perfil = perfiles.length ? perfilElegido() : '';
+  recordarPerfil(perfil);
   ajustesPendientes = null;
 
   if (fichero) {
-    subir(fichero, titulo || null, { hablantes, vocabulario });
+    subir(fichero, titulo || null, { hablantes, vocabulario, contexto, perfil });
     return;
   }
 
   try {
+    const cuerpo = { titulo, vocabulario, contexto, esperados: hablantes || 0 };
+    if (perfiles.length) cuerpo.perfil = perfil;   // sin perfiles, no se toca el que tuviera
     await api(`/jobs/${job.id}/ajustes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ titulo, vocabulario, esperados: hablantes || 0 }),
+      body: JSON.stringify(cuerpo),
     });
     avisar('Ajustes guardados');
     if (location.hash) abrirDetalle(job.id); else cargarLista(true);
@@ -451,6 +630,8 @@ function subir(fichero, titulo = null, extras = {}) {
   datos.append('titulo', titulo || fichero.name.replace(/\.[^.]+$/, ''));
   if (extras.vocabulario) datos.append('vocabulario', extras.vocabulario);
   if (extras.hablantes) datos.append('esperados', extras.hablantes);
+  if (extras.perfil) datos.append('perfil', extras.perfil);
+  if (extras.contexto) datos.append('contexto', extras.contexto);
 
   const peticion = new XMLHttpRequest();
   peticion.open('POST', 'api/jobs');
@@ -528,9 +709,12 @@ async function abrirDetalle(id) {
     if (job.estado === 'pendiente') {
       const resumen = document.createElement('dl');
       resumen.className = 'ficha';
+      const delPerfil = perfilDe(job.perfil)?.vocabulario;
+      const terminos = unirTerminos(delPerfil, job.vocabulario);
       for (const [clave, valor] of [
         ['Personas', job.esperados || 'las que detecte'],
-        ['Vocabulario', job.vocabulario || 'el general del config.toml'],
+        ['De qué va', job.contexto || 'sin indicar'],
+        ['Vocabulario', terminos.join(', ') || 'ninguno'],
       ]) {
         const dt = document.createElement('dt'); dt.textContent = clave;
         const dd = document.createElement('dd'); dd.textContent = valor;
@@ -575,6 +759,8 @@ function encabezado(job) {
   const cuando = document.createElement('div');
   cuando.className = 'detalle-fecha';
   cuando.textContent = fecha(job.creado);
+  const perfil = perfilDe(job.perfil);
+  if (perfil) cuando.append(etiquetaPerfil(perfil));
   return [titulo, cuando];
 }
 
@@ -609,20 +795,27 @@ function fichaTecnica(job, datos) {
     rejilla.append(celda);
   }
 
-  const vocabulario = document.createElement('div');
-  vocabulario.className = 'dato-ancho';
-  const clave = document.createElement('span');
-  clave.className = 'dato-clave';
-  clave.textContent = 'Vocabulario';
-  const valor = document.createElement('span');
-  valor.className = 'dato-valor';
-  const terminos = (job.vocabulario || '').split(',').map((t) => t.trim()).filter(Boolean);
-  valor.textContent = terminos.length
-    ? terminos.join(' · ')
-    : 'solo el general del config.toml';
-  vocabulario.append(clave, valor);
+  // Lo que se aplico de verdad: el resultado guarda el vocabulario ya sumado
+  // (perfil y reunion). En las reuniones anteriores no esta, y se usa el de la fila.
+  const terminos = datos.vocabulario
+    ? unirTerminos(datos.vocabulario) : unirTerminos(job.vocabulario);
+  const filas = [['Vocabulario', terminos.join(' · ') || 'ninguno']];
+  const contexto = datos.contexto || job.contexto;
+  if (contexto) filas.push(['De qué va', contexto]);
 
-  ficha.append(rejilla, vocabulario);
+  ficha.append(rejilla);
+  for (const [nombre, texto] of filas) {
+    const fila = document.createElement('div');
+    fila.className = 'dato-ancho';
+    const clave = document.createElement('span');
+    clave.className = 'dato-clave';
+    clave.textContent = nombre;
+    const valor = document.createElement('span');
+    valor.className = 'dato-valor';
+    valor.textContent = texto;
+    fila.append(clave, valor);
+    ficha.append(fila);
+  }
   return ficha;
 }
 
@@ -693,6 +886,7 @@ function pintarDetalle(caja, job, datos) {
 
 function abrirMenu() {
   if (!trabajoAbierto) return avisar('Espera a que cargue la grabación');
+  $('#accion-perfil').classList.toggle('oculto', !perfiles.length);
   $('#acciones-titulo').textContent = trabajoAbierto.titulo || trabajoAbierto.fichero;
   $('#dialogo-acciones').showModal();
 }
@@ -847,7 +1041,7 @@ function actualizarSeleccion() {
   const borrar = $('#seleccion-borrar');
   borrar.disabled = n === 0;
   borrar.textContent = n ? `Eliminar ${n}` : 'Eliminar';
-  const todas = n > 0 && n === ultimosDatos.trabajos.length;
+  const todas = n > 0 && n === visibles().length;
   $('#seleccion-todas').textContent = todas ? 'Ninguna' : 'Todas';
 }
 
@@ -855,8 +1049,8 @@ $('#boton-seleccionar')?.addEventListener('click', entrarEnSeleccion);
 $('#seleccion-cancelar')?.addEventListener('click', salirDeSeleccion);
 
 $('#seleccion-todas')?.addEventListener('click', () => {
-  const todas = seleccion.size === ultimosDatos.trabajos.length;
-  seleccion = new Set(todas ? [] : ultimosDatos.trabajos.map((t) => t.id));
+  const todas = seleccion.size === visibles().length;
+  seleccion = new Set(todas ? [] : visibles().map((t) => t.id));
   sincronizarMarcas();
 });
 
@@ -870,6 +1064,38 @@ $('#boton-menu')?.addEventListener('click', abrirMenu);
 $('#accion-renombrar')?.addEventListener('click', () => {
   $('#dialogo-acciones').close();
   pedirTitulo();
+});
+
+function pedirCambioDePerfil() {
+  const job = trabajoAbierto;
+  $('#cambiar-perfil-pista').textContent = job.titulo || job.fichero;
+  botonesDePerfil($('#cambiar-perfil-botones'),
+                  { actual: job.perfil || '', conNinguno: true, nota: 'actual' });
+  $('#dialogo-cambiar-perfil').showModal();
+}
+
+$('#accion-perfil')?.addEventListener('click', () => {
+  $('#dialogo-acciones').close();
+  pedirCambioDePerfil();
+});
+
+$('#form-cambiar-perfil')?.addEventListener('submit', async (e) => {
+  const job = trabajoAbierto;
+  const valor = e.submitter?.value || '';
+  if (!job || !valor.startsWith('perfil:')) return;
+  const id = valor.slice(7);
+  if (id === (job.perfil || '')) return;
+  try {
+    await api(`/jobs/${job.id}/ajustes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ perfil: id }),
+    });
+    avisar('Perfil cambiado');
+    abrirDetalle(job.id);
+  } catch (err) {
+    avisar('No se pudo cambiar el perfil', true);
+  }
 });
 
 $('#accion-borrar')?.addEventListener('click', () => {
@@ -901,6 +1127,168 @@ introGuarda($('#campo-nuevo-titulo'), $('#form-nombre'), $('#nombre-aceptar'));
 introGuarda($('#campo-nombre'), $('#form-hablante'), $('#voz-aceptar'));
 introGuarda($('#campo-titulo'), $('#form-ajustes'), $('#ajustes-aceptar'));
 introGuarda($('#campo-hablantes'), $('#form-ajustes'), $('#ajustes-aceptar'));
+introGuarda($('#campo-contexto'), $('#form-ajustes'), $('#ajustes-aceptar'));
+introGuarda($('#campo-perfil-nombre'), $('#form-perfil'), $('#perfil-aceptar'));
+
+// ------------------------------------------------ pantalla de perfiles
+
+const plural = (n, uno, varios) => (n === 1 ? uno : varios);
+let perfilEnEdicion = null;   // el perfil que se edita, o null si es uno nuevo
+
+async function abrirPerfiles() {
+  mostrar('perfiles');
+  pintarPerfiles();        // primero lo guardado, para no dejar la pantalla en blanco
+  await cargarPerfiles();
+  pintarPerfiles();
+}
+
+function lineaDePerfil(clave, texto) {
+  const linea = document.createElement('div');
+  const negrita = document.createElement('strong');
+  negrita.textContent = clave;
+  linea.append(negrita, ` ${texto}`);
+  return linea;
+}
+
+function pintarPerfiles() {
+  const lista = $('#lista-perfiles');
+  lista.textContent = '';
+  if (!perfiles.length) {
+    const vacio = document.createElement('p');
+    vacio.className = 'vacio';
+    vacio.textContent = 'Todavía no hay perfiles. Crea el primero con Nuevo.';
+    lista.append(vacio);
+    return;
+  }
+
+  for (const perfil of perfiles) {
+    const tarjeta = document.createElement('button');
+    tarjeta.type = 'button';
+    tarjeta.className = 'tarjeta';
+    tarjeta.onclick = () => pedirPerfil(perfil);
+
+    const cabecera = document.createElement('h2');
+    const punto = document.createElement('span');
+    punto.className = `punto-perfil c${perfil.color % 6}`;
+    const nombre = document.createElement('span');
+    nombre.className = 'titulo';
+    nombre.textContent = perfil.nombre;
+    const n = perfil.grabaciones || 0;
+    const cuenta = document.createElement('span');
+    cuenta.className = 'estado';
+    cuenta.textContent = `${n} ${plural(n, 'grabación', 'grabaciones')}`;
+    cabecera.append(punto, nombre, cuenta);
+
+    const terminos = unirTerminos(perfil.vocabulario);
+    const resto = terminos.length - 6;
+    const datos = document.createElement('div');
+    datos.className = 'perfil-datos';
+    datos.append(
+      lineaDePerfil('Vocabulario', terminos.length
+        ? `${terminos.length} ${plural(terminos.length, 'término', 'términos')}: `
+          + `${terminos.slice(0, 6).join(', ')}${resto > 0 ? ` y ${resto} más` : ''}`
+        : 'sin vocabulario'),
+      lineaDePerfil('Habituales', perfil.participantes.length
+        ? perfil.participantes.join(', ') : 'sin nombres'),
+    );
+
+    tarjeta.append(cabecera, datos);
+    lista.append(tarjeta);
+  }
+}
+
+function pedirPerfil(perfil = null) {
+  perfilEnEdicion = perfil;
+  $('#perfil-titulo').textContent = perfil ? 'Editar perfil' : 'Nuevo perfil';
+  $('#campo-perfil-nombre').value = perfil?.nombre || '';
+  $('#campo-perfil-vocabulario').value = unirTerminos(perfil?.vocabulario).join(', ');
+  $('#campo-perfil-participantes').value = (perfil?.participantes || []).join(', ');
+  $('#perfil-eliminar').classList.toggle('oculto', !perfil);
+  actualizarCuentaDeTerminos();
+  $('#dialogo-perfil').showModal();
+  // En uno nuevo, a escribir el nombre. En uno existente showModal ya habria
+  // dejado el foco en el nombre y abierto el teclado sin que nadie lo pidiera.
+  if (perfil) document.activeElement?.blur(); else $('#campo-perfil-nombre').focus();
+}
+
+/* Una lista larga de terminos reparte la atencion del modelo y empeora el
+   resultado: se avisa al pasar de cierto numero, sin impedirlo. */
+function actualizarCuentaDeTerminos() {
+  const n = unirTerminos($('#campo-perfil-vocabulario').value).length;
+  $('#perfil-cuenta').textContent = n > 25
+    ? `${n} términos: son muchos. Deja los que suelen salir mal; el resto, Whisper ya los acierta.`
+    : `${n} ${plural(n, 'término', 'términos')}. Pocos y pertinentes: una lista larga empeora el resultado.`;
+}
+
+async function guardarPerfil() {
+  const actual = perfilEnEdicion;
+  const cuerpo = {
+    nombre: $('#campo-perfil-nombre').value.trim(),
+    vocabulario: $('#campo-perfil-vocabulario').value,
+    participantes: $('#campo-perfil-participantes').value,
+  };
+  try {
+    await api(actual ? `/perfiles/${actual.id}` : '/perfiles', {
+      method: actual ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo),
+    });
+    await cargarPerfiles();
+    pintarPerfiles();
+    avisar(actual ? 'Perfil guardado' : 'Perfil creado');
+  } catch (e) {
+    avisar(e.message === 'HTTP 409' ? 'Ya hay un perfil con ese nombre'
+                                    : 'No se pudo guardar el perfil', true);
+    $('#dialogo-perfil').showModal();   // lo escrito sigue ahi: no se pierde
+  }
+}
+
+function pedirBorradoDePerfil() {
+  const perfil = perfilEnEdicion;
+  if (!perfil) return;
+  $('#dialogo-perfil').close();
+  $('#borrar-perfil-nombre').textContent = perfil.nombre;
+  const n = perfil.grabaciones || 0;
+  $('#borrar-perfil-aviso').textContent = n
+    ? `Sus ${n} ${plural(n, 'grabación se queda', 'grabaciones se quedan')} sin perfil. No se borra ninguna grabación.`
+    : 'No tiene ninguna grabación.';
+  $('#dialogo-borrar-perfil').showModal();
+}
+
+async function borrarPerfil() {
+  const perfil = perfilEnEdicion;
+  if (!perfil) return;
+  try {
+    await api(`/perfiles/${perfil.id}`, { method: 'DELETE' });
+    if (filtro === perfil.id) elegirFiltroSinPintar('');
+    await cargarPerfiles();
+    pintarPerfiles();
+    avisar('Perfil eliminado');
+  } catch (e) {
+    avisar('No se pudo eliminar el perfil', true);
+  }
+}
+
+function elegirFiltroSinPintar(id) {
+  filtro = id;
+  try { localStorage.setItem(CLAVE_FILTRO, filtro); } catch { /* modo privado */ }
+}
+
+$('#boton-perfiles')?.addEventListener('click', () => { location.hash = '/perfiles'; });
+$('#perfiles-volver')?.addEventListener('click', () => { location.hash = ''; });
+$('#perfil-nuevo')?.addEventListener('click', () => pedirPerfil(null));
+$('#campo-perfil-vocabulario')?.addEventListener('input', actualizarCuentaDeTerminos);
+$('#perfil-eliminar')?.addEventListener('click', pedirBorradoDePerfil);
+
+$('#form-perfil')?.addEventListener('submit', (e) => {
+  if (e.submitter?.value !== 'guardar') return;
+  guardarPerfil();
+});
+
+$('#form-borrar-perfil')?.addEventListener('submit', (e) => {
+  if (e.submitter?.value !== 'borrar') return;
+  borrarPerfil();
+});
 
 // ------------------------------------------------- renombrar hablantes
 
@@ -911,6 +1299,37 @@ function primeraFraseDe(etiqueta) {
   return `"${frase}${turno.texto.length > 90 ? '...' : ''}"`;
 }
 
+/* Si la reunion tiene perfil, la gente con la que se suele hablar sale como
+   botones: un toque en vez de teclear. Se quitan los nombres que ya estan
+   puestos a otra voz de esta misma reunion. */
+function pintarSugerencias(hablante) {
+  const caja = $('#nombre-sugerencias');
+  const botones = $('#sugerencias-botones');
+  botones.textContent = '';
+
+  const perfil = perfilDe(trabajoAbierto?.perfil);
+  const usados = new Set((estadoDetalle?.datos.hablantes || [])
+    .filter((h) => h.etiqueta !== hablante.etiqueta && h.nombre !== h.etiqueta)
+    .map((h) => h.nombre.toLowerCase()));
+  const nombres = (perfil?.participantes || []).filter((n) => !usados.has(n.toLowerCase()));
+
+  caja.classList.toggle('oculto', !nombres.length);
+  if (!nombres.length) return;
+
+  $('#sugerencias-titulo').textContent = `Habituales de ${perfil.nombre}`;
+  for (const nombre of nombres) {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'opcion-boton';
+    boton.textContent = nombre;
+    boton.onclick = () => {
+      $('#dialogo-hablante').close();
+      guardarNombre(hablante.etiqueta, nombre);
+    };
+    botones.append(boton);
+  }
+}
+
 function pedirNombre(hablante) {
   const dialogo = $('#dialogo-hablante');
   $('#dialogo-titulo').textContent = `¿Quién es ${hablante.etiqueta}?`;
@@ -918,6 +1337,7 @@ function pedirNombre(hablante) {
     || `${reloj(hablante.segundos)} hablando, ${hablante.intervenciones} intervenciones`;
   const campo = $('#campo-nombre');
   campo.value = hablante.nombre === hablante.etiqueta ? '' : hablante.nombre;
+  pintarSugerencias(hablante);
   dialogo.dataset.etiqueta = hablante.etiqueta;
   dialogo.showModal();
   campo.focus();
@@ -1026,12 +1446,73 @@ async function recogerCompartido() {
     const titulo = decodeURIComponent(guardado.headers.get('X-Titulo') || '');
     await cache.delete(clave);
 
-    subir(new File([datos], conExtension(nombre, datos.type), { type: datos.type }),
-          titulo || null);
+    pedirPerfilYSubir(
+      new File([datos], conExtension(nombre, datos.type), { type: datos.type }),
+      titulo || null);
   } catch (e) {
     avisar('Fallo al recoger la grabación compartida', true);
   }
 }
+
+/* Al compartir desde la Grabadora no hay dialogo de ajustes, pero si hace falta
+   saber a que perfil va: un boton por perfil, y con un toque se sube. */
+function pedirPerfilYSubir(fichero, titulo) {
+  // Un servidor sin perfiles se comporta como siempre: sube directo.
+  if (!perfiles.length) { subir(fichero, titulo); return; }
+
+  compartidoPendiente = { fichero, titulo };
+  $('#compartido-fichero').textContent = titulo || fichero.name;
+  botonesDePerfil($('#compartido-perfiles'), { actual: ultimoPerfil(), nota: 'el último' });
+  $('#dialogo-compartido').showModal();
+}
+
+/* Un boton por perfil. Su valor lleva el id, que es lo que recoge el submit. */
+function botonesDePerfil(caja, { actual = '', conNinguno = false, nota = null } = {}) {
+  caja.textContent = '';
+  const opciones = [...perfiles];
+  if (conNinguno) opciones.push({ id: '', nombre: 'Ninguno' });
+
+  for (const opcion of opciones) {
+    const boton = document.createElement('button');
+    boton.type = 'submit';
+    boton.value = `perfil:${opcion.id}`;
+    boton.className = 'perfil-boton'
+      + (opcion.id === actual ? ' actual' : '')
+      + (opcion.id === '' ? ' ninguno' : '');
+    if (opcion.color !== undefined) {
+      const punto = document.createElement('span');
+      punto.className = `punto-perfil c${opcion.color % 6}`;
+      boton.append(punto);
+    }
+    boton.append(opcion.nombre);
+    if (opcion.id === actual && nota) {
+      const marca = document.createElement('span');
+      marca.className = 'nota';
+      marca.textContent = nota;
+      boton.append(marca);
+    }
+    caja.append(boton);
+  }
+}
+
+$('#form-compartido')?.addEventListener('submit', (e) => {
+  const pendiente = compartidoPendiente;
+  compartidoPendiente = null;
+  if (!pendiente) return;
+
+  const valor = e.submitter?.value || '';
+  if (valor.startsWith('perfil:')) {
+    const id = valor.slice(7);
+    recordarPerfil(id);
+    subir(pendiente.fichero, pendiente.titulo, { perfil: id });
+  } else if (valor === 'ajustes') {
+    // Se abre cuando este dialogo ya se ha cerrado, para que no se pisen.
+    setTimeout(() => pedirAjustes(
+      pendiente.fichero, null, ultimoPerfil() || null, pendiente.titulo, true), 0);
+  } else {
+    avisar('No se ha subido nada');
+  }
+});
 
 /* La Grabadora comparte con nombres que a veces no traen extension, y la API
    la necesita para saber que es. Se deduce del tipo de contenido. */

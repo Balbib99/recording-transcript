@@ -103,6 +103,50 @@ def guardar_resultado(ruta: Path, datos: dict[str, Any]) -> None:
     temporal.replace(ruta)
 
 
+def terminos_de(texto: Any) -> list[str]:
+    """Separa una lista escrita a mano (comas o saltos de linea) en terminos.
+
+    Quita los vacios y los repetidos (sin distinguir mayusculas) y respeta el
+    orden en que se escribieron.
+    """
+    if not texto:
+        return []
+    if isinstance(texto, str):
+        texto = texto.replace(chr(10), ",").replace(chr(13), ",").split(",")
+    vistos: set[str] = set()
+    salida: list[str] = []
+    for bruto in texto:
+        termino = str(bruto).strip()
+        if termino and termino.lower() not in vistos:
+            vistos.add(termino.lower())
+            salida.append(termino)
+    return salida
+
+
+def unir_terminos(*listas: Any) -> str | None:
+    """Suma varias listas de terminos en una, sin repetir: general, perfil y reunion."""
+    juntos: list[str] = []
+    for lista in listas:
+        juntos.extend(terminos_de(lista))
+    return ", ".join(terminos_de(juntos)) or None
+
+
+def perfil_publico(perfil: dict[str, Any], grabaciones: int | None = None) -> dict[str, Any]:
+    try:
+        participantes = json.loads(perfil["participantes"]) if perfil.get("participantes") else []
+    except (TypeError, ValueError):
+        participantes = []
+    return {
+        "id": perfil["id"],
+        "nombre": perfil["nombre"],
+        "color": perfil["color"],
+        "vocabulario": perfil["vocabulario"] or "",
+        "participantes": participantes,
+        "orden": perfil["orden"],
+        "grabaciones": grabaciones,
+    }
+
+
 def voces_de(job: dict[str, Any]) -> list[str] | None:
     try:
         return json.loads(job["voces"]) if job.get("voces") else None
@@ -127,6 +171,8 @@ def publico(job: dict[str, Any]) -> dict[str, Any]:
         "vocabulario": job["vocabulario"],
         "esperados": job["esperados"],
         "voces": voces_de(job),
+        "perfil": job["perfil"],
+        "contexto": job["contexto"],
     }
 
 
@@ -195,6 +241,10 @@ async def subir(
         description="Terminos separados por comas: nombres, marcas, modelos")] = None,
     esperados: Annotated[int | None, Form(
         description="Cuantas personas hablan, si se sabe")] = None,
+    perfil: Annotated[str | None, Form(
+        description="Id del perfil de trabajo (empresa, casa...)")] = None,
+    contexto: Annotated[str | None, Form(
+        description="De que va la reunion, en una frase, si se quiere")] = None,
 ) -> dict[str, Any]:
     """Recibe una grabacion y la encola.
 
@@ -208,6 +258,10 @@ async def subir(
             detail=f"Extension no admitida: '{extension}'. "
                    f"Validas: {', '.join(sorted(config.EXTENSIONES))}",
         )
+
+    perfil = (perfil or "").strip() or None
+    if perfil and db.obtener_perfil(perfil) is None:
+        raise HTTPException(status_code=400, detail="No existe ese perfil")
 
     config.crear_directorios()
     temporal = config.AUDIO_DIR / f".subiendo-{db.nuevo_id()}{extension}"
@@ -249,6 +303,8 @@ async def subir(
         sha256=sha,
         vocabulario=(vocabulario or "").strip()[:2000] or None,
         esperados=esperados if esperados and 1 <= esperados <= 20 else None,
+        perfil=perfil,
+        contexto=(contexto or "").strip()[:300] or None,
     )
     temporal.rename(ruta_audio(job))
     return {**publico(job), "duplicado": False}
@@ -301,6 +357,13 @@ def ajustes(job_id: str, datos: dict[str, Any]) -> dict[str, Any]:
         if numero and not 1 <= numero <= 20:
             raise HTTPException(status_code=400, detail="Entre 1 y 20 hablantes")
         cambios["esperados"] = numero or None
+    if "perfil" in datos:
+        perfil_id = str(datos["perfil"] or "").strip()
+        if perfil_id and db.obtener_perfil(perfil_id) is None:
+            raise HTTPException(status_code=400, detail="No existe ese perfil")
+        cambios["perfil"] = perfil_id or None
+    if "contexto" in datos:
+        cambios["contexto"] = (str(datos["contexto"] or "").strip()[:300] or None)
 
     actualizado = db.actualizar(job_id, **cambios)
 
@@ -315,8 +378,11 @@ def ajustes(job_id: str, datos: dict[str, Any]) -> dict[str, Any]:
             render.regenerar(resultado)
             guardar_resultado(ruta, resultado)
 
-    # Vocabulario y personas esperadas, en cambio, solo cuentan al transcribir.
-    afecta_a_la_transcripcion = bool({"vocabulario", "esperados"} & cambios.keys())
+    # Vocabulario, contexto y personas esperadas, en cambio, solo cuentan al
+    # transcribir. El perfil de una reunion hecha es una etiqueta: se puede
+    # corregir sin rehacer nada.
+    afecta_a_la_transcripcion = bool(
+        {"vocabulario", "esperados", "contexto"} & cambios.keys())
     aviso = None if (job["estado"] == "pendiente" or not afecta_a_la_transcripcion) else (
         "El trabajo ya no esta pendiente: reencolalo para que surtan efecto")
     return {**publico(actualizado), "aviso": aviso}  # type: ignore[arg-type]
@@ -366,9 +432,17 @@ def reclamar(worker: Annotated[str, Form()] = "worker") -> dict[str, Any]:
     job = db.reclamar_siguiente(nombre)
     if job is None:
         return {"trabajo": None}
-    return {"trabajo": {**publico(job), "sha256": job["sha256"],
-                        "intentos": job["intentos"]}}  # publico() ya lleva
-                                                       # vocabulario y esperados
+    # El vocabulario que se aplica es el del perfil mas el de la reunion, juntos
+    # y sin repetir. Se resuelve aqui, en el momento de reclamar, para que el
+    # worker no tenga que saber nada de perfiles.
+    perfil = db.obtener_perfil(job["perfil"]) if job["perfil"] else None
+    return {"trabajo": {
+        **publico(job),
+        "sha256": job["sha256"],
+        "intentos": job["intentos"],
+        "vocabulario_total": unir_terminos(perfil["vocabulario"] if perfil else None,
+                                           job["vocabulario"]),
+    }}
 
 
 @app.post("/api/jobs/{job_id}/resultado", dependencies=[Protegido])
@@ -478,6 +552,68 @@ def borrar(job_id: str) -> dict[str, Any]:
     (config.RESULT_DIR / f"{job_id}.json").unlink(missing_ok=True)
     db.borrar_job(job_id)
     return {"borrado": job_id}
+
+
+# ------------------------------------------------------------------- perfiles
+
+def _nombre_de_perfil(datos: dict[str, Any], propio: str | None = None) -> str:
+    nombre = str(datos.get("nombre") or "").strip()[:40]
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El perfil necesita un nombre")
+    for otro in db.listar_perfiles():
+        if otro["id"] != propio and otro["nombre"].lower() == nombre.lower():
+            raise HTTPException(status_code=409, detail=f"Ya hay un perfil llamado {nombre}")
+    return nombre
+
+
+def _vocabulario_de(valor: Any) -> str | None:
+    return (unir_terminos(valor) or "")[:2000] or None
+
+
+def _participantes_json(valor: Any) -> str | None:
+    nombres = [n[:60] for n in terminos_de(valor)][:30]
+    return json.dumps(nombres, ensure_ascii=False) if nombres else None
+
+
+@app.get("/api/perfiles", dependencies=[Protegido])
+def perfiles_listar() -> dict[str, Any]:
+    cuentas = db.contar_jobs_por_perfil()
+    return {"perfiles": [perfil_publico(p, cuentas.get(p["id"], 0))
+                         for p in db.listar_perfiles()]}
+
+
+@app.post("/api/perfiles", status_code=status.HTTP_201_CREATED, dependencies=[Protegido])
+def perfiles_crear(datos: dict[str, Any]) -> dict[str, Any]:
+    perfil = db.crear_perfil(
+        nombre=_nombre_de_perfil(datos),
+        vocabulario=_vocabulario_de(datos.get("vocabulario")),
+        participantes=_participantes_json(datos.get("participantes")),
+    )
+    return perfil_publico(perfil, 0)
+
+
+@app.put("/api/perfiles/{perfil_id}", dependencies=[Protegido])
+def perfiles_editar(perfil_id: str, datos: dict[str, Any]) -> dict[str, Any]:
+    if db.obtener_perfil(perfil_id) is None:
+        raise HTTPException(status_code=404, detail="No existe ese perfil")
+    cambios: dict[str, Any] = {}
+    if "nombre" in datos:
+        cambios["nombre"] = _nombre_de_perfil(datos, propio=perfil_id)
+    if "vocabulario" in datos:
+        cambios["vocabulario"] = _vocabulario_de(datos["vocabulario"])
+    if "participantes" in datos:
+        cambios["participantes"] = _participantes_json(datos["participantes"])
+    perfil = db.actualizar_perfil(perfil_id, **cambios)
+    cuenta = db.contar_jobs_por_perfil().get(perfil_id, 0)
+    return perfil_publico(perfil, cuenta)  # type: ignore[arg-type]
+
+
+@app.delete("/api/perfiles/{perfil_id}", dependencies=[Protegido])
+def perfiles_borrar(perfil_id: str) -> dict[str, Any]:
+    if db.obtener_perfil(perfil_id) is None:
+        raise HTTPException(status_code=404, detail="No existe ese perfil")
+    sueltas = db.borrar_perfil(perfil_id)
+    return {"borrado": perfil_id, "grabaciones_sin_perfil": sueltas}
 
 
 # ---------------------------------------------------------------------- web

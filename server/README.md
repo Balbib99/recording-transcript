@@ -29,12 +29,16 @@ No transcribe nada por sí mismo: aquí no hay ni PyTorch ni modelos.
 |---|---|---|
 | GET | `/api/health` | Vivo o no. Sin token |
 | GET | `/api/estado` | Recuento por estado y uso de disco |
-| POST | `/api/jobs` | Subir una grabación (multipart: `file`, `titulo` opcional) |
+| POST | `/api/jobs` | Subir una grabación (multipart: `file`; opcionales `titulo`, `perfil`, `contexto`, `vocabulario`, `esperados`) |
 | GET | `/api/jobs` | Listar (`estado`, `limite`, `desplazamiento`) |
 | GET | `/api/jobs/{id}` | Detalle |
 | GET | `/api/jobs/{id}/audio` | Descargar el audio (lo usa el worker) |
 | GET | `/api/jobs/{id}/transcripcion` | Resultado, cuando exista |
-| POST | `/api/jobs/{id}/ajustes` | Cambiar `titulo`, `vocabulario` o `esperados`. El título se puede cambiar siempre (si ya hay transcripción, también se rehace su JSON y su Markdown); vocabulario y personas solo cuentan antes de transcribir |
+| POST | `/api/jobs/{id}/ajustes` | Cambiar `titulo`, `perfil`, `contexto`, `vocabulario` o `esperados`. El título se puede cambiar siempre (si ya hay transcripción, también se rehace su JSON y su Markdown); vocabulario y personas solo cuentan antes de transcribir |
+| GET | `/api/perfiles` | Los perfiles de trabajo, con su vocabulario, participantes y cuántas grabaciones tiene cada uno |
+| POST | `/api/perfiles` | Crear uno (`nombre`, `vocabulario`, `participantes`) |
+| PUT | `/api/perfiles/{id}` | Cambiar su nombre, vocabulario o participantes |
+| DELETE | `/api/perfiles/{id}` | Borrarlo. Sus grabaciones no se borran: se quedan sin perfil |
 | DELETE | `/api/jobs/{id}` | Borrar trabajo, audio y transcripción, en cualquier estado (también uno atascado en `procesando`) |
 
 Documentación interactiva en `/api/docs`.
