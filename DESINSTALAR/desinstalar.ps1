@@ -80,6 +80,15 @@ if ($Simular) {
     Write-Host "  MODO SIMULACION: no se va a borrar nada." -ForegroundColor Green
 }
 
+# --- el arranque automatico del worker apunta a esta carpeta -----------
+if (Get-ScheduledTask -TaskName 'RecordingCraft Worker' -ErrorAction SilentlyContinue) {
+    Write-Host ""
+    Write-Host "  El worker arranca con Windows: hay que quitar eso antes." -ForegroundColor Yellow
+    Write-Host "  Abre PowerShell como administrador y lanza:"
+    Write-Host "    powershell -ExecutionPolicy Bypass -File `"$root\scripts\quitar-arranque-worker.ps1`""
+    if (-not $Simular) { exit 1 }
+}
+
 # --- inventario --------------------------------------------------------
 $objetivos = @()
 $objetivos += [pscustomobject]@{ Tipo = "proyecto"; Ruta = $root; Bytes = (Get-Tamano $root) }

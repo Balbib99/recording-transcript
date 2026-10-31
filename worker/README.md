@@ -115,7 +115,36 @@ transcripción) vuelve solo a la cola pasadas tres horas, configurable con
 
 ## Dejarlo siempre en marcha
 
-Para que arranque con Windows, lo más simple es el Programador de tareas: acción
-`.venv\Scripts\pythonw.exe` con argumento `worker\worker.py`, disparador "al iniciar
-sesión", y marcar que se reinicie si falla. No hace falta servicio ni permisos de
-administrador.
+Una tarea programada lanza el worker al **iniciar el equipo**, sin iniciar sesión, para
+que funcione aunque el PC se haya encendido a distancia. No se ve ninguna ventana: lo
+que hace queda en `worker/worker.log`.
+
+Hay que usar PowerShell **como administrador**, con tu usuario:
+
+```powershell
+# Instalar, o repetir tras mover la carpeta del proyecto
+powershell -ExecutionPolicy Bypass -File scripts\instalar-arranque-worker.ps1
+
+# Quitar: para el worker y borra la tarea
+powershell -ExecutionPolicy Bypass -File scripts\quitar-arranque-worker.ps1
+
+# Parar sin quitar, y volver a arrancar (tras tocar config.toml o actualizar el codigo)
+powershell -ExecutionPolicy Bypass -File scripts\quitar-arranque-worker.ps1 -SoloParar
+Start-ScheduledTask -TaskName "RecordingCraft Worker"
+
+# Ver si esta instalada y como va (estos dos no piden administrador)
+Get-ScheduledTask -TaskName "RecordingCraft Worker"
+Get-Content worker/worker.log -Tail 20
+```
+
+Para cambiar algo, edita `scripts/instalar-arranque-worker.ps1` y vuelve a lanzarlo:
+sustituye la tarea. Ahí se decide el retraso al arrancar (30 s), la prioridad y los
+reintentos.
+
+- Corre como tu usuario con inicio de sesión **S4U**: no guarda tu contraseña. La clave
+  SSH no puede llevar frase de paso, porque nadie la teclearía.
+- Lleva `--insistir`: si al arrancar aún no hay red o la Pi no responde, reintenta.
+- Solo puede haber un worker: `INICIAR-WORKER.cmd` dirá *«Ya hay otro worker en marcha»*
+  mientras la tarea esté activa. Para usarlo a mano, para antes la tarea.
+- Lo que lee `config.toml` y el código solo cambia al reiniciarlo.
+- No apaga el PC al terminar: eso sigue siendo cosa tuya.

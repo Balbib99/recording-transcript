@@ -43,3 +43,12 @@ Desde PowerShell, si quieres afinar:
 - Si al final la carpeta sigue ahí, es que algo la tiene abierta: VS Code, el
   explorador de Windows o una terminal. Ciérralo y bórrala a mano.
 - Los modelos sí se borran de inmediato, antes del proyecto.
+
+## Si el worker arranca con Windows
+
+El desinstalador se detiene si encuentra la tarea programada, porque quedaría apuntando
+a una carpeta que ya no existe. Quítala antes, desde PowerShell como administrador:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\quitar-arranque-worker.ps1
+```

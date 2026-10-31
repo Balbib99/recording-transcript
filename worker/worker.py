@@ -6,6 +6,7 @@ el mismo y lo reabre si se cae. Para el usuario es un unico proceso.
     python worker/worker.py             # bucle continuo
     python worker/worker.py --once      # un solo trabajo y sale
     python worker/worker.py --estado    # que hay en la cola
+    python worker/worker.py --insistir  # no rendirse si la API aun no responde
 
 Configuracion en worker/.env (ver .env.example). Los ajustes de transcripcion
 (modelo, idioma, diarizacion) salen del config.toml del proyecto, el mismo que
@@ -169,7 +170,8 @@ def ciclo(cfg, tunel: Tunel, una_vez: bool) -> int:
             raise
         except Exception as exc:
             log(f"! fallo al procesar {job['id']}: {exc}")
-            traceback.print_exc()
+            # Por log() y no por stderr: arrancado con Windows no hay consola.
+            log(traceback.format_exc())
             try:
                 api("POST", f"/api/jobs/{job['id']}/fallo",
                     data={"error": f"{type(exc).__name__}: {exc}"})
@@ -262,6 +264,8 @@ def main() -> int:
     parser.add_argument("--estado", action="store_true", help="muestra la cola y sale")
     parser.add_argument("--sin-tunel", action="store_true",
                         help="no abrir tunel SSH (la API ya es accesible)")
+    parser.add_argument("--insistir", action="store_true",
+                        help="si la API no responde, seguir reintentando en vez de salir")
     args = parser.parse_args()
 
     if not API_TOKEN:
@@ -289,10 +293,13 @@ def main() -> int:
     tunel = Tunel(host="" if args.sin_tunel else None)
 
     try:
-        tunel.abrir()
-        if not esperar_api():
-            log(f"la API no responde en {API_URL}")
-            return 1
+        # Al arrancar con Windows la red o la Pi pueden tardar: con --insistir
+        # se entra directo al bucle, que ya reintenta y reabre el tunel solo.
+        if not args.insistir:
+            tunel.abrir()
+            if not esperar_api():
+                log(f"la API no responde en {API_URL}")
+                return 1
         return ciclo(cfg, tunel, args.once)
     except KeyboardInterrupt:
         log("interrumpido")
