@@ -1012,4 +1012,11 @@ fieldset.grupo .pista { margin: 8px 0 0; }
   border: 0;
   box-shadow: none;
 }
-#dialogo-asistente .extras textarea { margin-top: 4px; }
+/* Los textos dentro de un desplegable, como los de un .campo */
+.extras textarea {
+  margin-top: 4px;
+  padding: 12px;
+  font-size: .82rem;
+  line-height: 1.5;
+  resize: vertical;
+}

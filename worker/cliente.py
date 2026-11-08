@@ -134,7 +134,34 @@ def cmd_guardar(args) -> int:
     (destino / "transcript.txt").write_text(datos["texto"], encoding="utf-8")
     (destino / "transcripcion.json").write_text(
         json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
+    claude = api("GET", f"/api/jobs/{args.id}/para-claude")
+    if claude.ok:
+        (destino / "para-claude.md").write_text(claude.json()["texto"], encoding="utf-8")
     log(f"Guardado en {destino}")
+    return 0
+
+
+def al_portapapeles(texto: str) -> bool:
+    """Copia al portapapeles de Windows. clip.exe entiende UTF-16 con BOM."""
+    import subprocess
+    try:
+        subprocess.run(["clip"], input=("﻿" + texto).encode("utf-16-le"), check=True)
+        return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
+def cmd_claude(args) -> int:
+    """La transcripcion preparada para Claude: al portapapeles, o en pantalla."""
+    r = api("GET", f"/api/jobs/{args.id}/para-claude")
+    if not r.ok:
+        log(f"Error {r.status_code}: {r.text[:200]}")
+        return 1
+    texto = r.json()["texto"]
+    if args.imprimir or not al_portapapeles(texto):
+        print(texto)
+        return 0
+    log(f"Copiado al portapapeles ({len(texto)} caracteres). Pégalo en Claude.")
     return 0
 
 
@@ -281,6 +308,12 @@ def main() -> int:
     p = sub.add_parser("ver", help="imprime la transcripcion")
     p.add_argument("id")
     p.set_defaults(func=cmd_ver)
+
+    p = sub.add_parser("claude", help="copia la transcripcion preparada para Claude")
+    p.add_argument("id")
+    p.add_argument("--imprimir", action="store_true",
+                   help="mostrarla en pantalla en vez de copiarla")
+    p.set_defaults(func=cmd_claude)
 
     p = sub.add_parser("guardar", help="guarda la transcripcion en el PC")
     p.add_argument("id")

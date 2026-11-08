@@ -86,6 +86,9 @@ COLUMNAS_NUEVAS = {
     "perfil": "TEXT",
     "contexto": "TEXT",
 }
+COLUMNAS_NUEVAS_PERFILES = {
+    "peticion": "TEXT",   # lo que se le pide a Claude al copiar la transcripcion
+}
 
 
 def inicializar() -> None:
@@ -96,6 +99,10 @@ def inicializar() -> None:
         for nombre, tipo in COLUMNAS_NUEVAS.items():
             if nombre not in existentes:
                 con.execute(f"ALTER TABLE jobs ADD COLUMN {nombre} {tipo}")
+        existentes = {f["name"] for f in con.execute("PRAGMA table_info(perfiles)")}
+        for nombre, tipo in COLUMNAS_NUEVAS_PERFILES.items():
+            if nombre not in existentes:
+                con.execute(f"ALTER TABLE perfiles ADD COLUMN {nombre} {tipo}")
     sembrar_perfiles()
 
 
@@ -275,21 +282,23 @@ def obtener_perfil(perfil_id: str) -> dict[str, Any] | None:
 
 
 def crear_perfil(*, nombre: str, vocabulario: str | None = None,
-                 participantes: str | None = None) -> dict[str, Any]:
+                 participantes: str | None = None,
+                 peticion: str | None = None) -> dict[str, Any]:
     perfil_id = nuevo_id()
     with conexion() as con:
         orden = con.execute("SELECT COALESCE(MAX(orden), -1) + 1 FROM perfiles").fetchone()[0]
         con.execute(
-            "INSERT INTO perfiles (id, nombre, color, vocabulario, participantes, orden, creado)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (perfil_id, nombre, orden % COLORES, vocabulario, participantes, orden, ahora()),
+            "INSERT INTO perfiles (id, nombre, color, vocabulario, participantes, peticion,"
+            " orden, creado) VALUES (?,?,?,?,?,?,?,?)",
+            (perfil_id, nombre, orden % COLORES, vocabulario, participantes, peticion,
+             orden, ahora()),
         )
     return obtener_perfil(perfil_id)  # type: ignore[return-value]
 
 
 def actualizar_perfil(perfil_id: str, **campos: Any) -> dict[str, Any] | None:
     cambios = {k: v for k, v in campos.items()
-               if k in {"nombre", "vocabulario", "participantes"}}
+               if k in {"nombre", "vocabulario", "participantes", "peticion"}}
     if not cambios:
         return obtener_perfil(perfil_id)
     asignaciones = ", ".join(f"{k} = ?" for k in cambios)

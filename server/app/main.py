@@ -142,6 +142,7 @@ def perfil_publico(perfil: dict[str, Any], grabaciones: int | None = None) -> di
         "color": perfil["color"],
         "vocabulario": perfil["vocabulario"] or "",
         "participantes": participantes,
+        "peticion": perfil.get("peticion") or "",
         "orden": perfil["orden"],
         "grabaciones": grabaciones,
     }
@@ -414,6 +415,29 @@ def transcripcion(job_id: str) -> dict[str, Any]:
     return json.loads(ruta.read_text(encoding="utf-8"))
 
 
+@app.get("/api/jobs/{job_id}/para-claude", dependencies=[Protegido])
+def para_claude(job_id: str) -> dict[str, Any]:
+    """La transcripcion preparada para pegarla en una conversacion con Claude.
+
+    Se genera al pedirla, con los nombres de las voces, el perfil y su peticion
+    tal como esten en ese momento.
+    """
+    datos = transcripcion(job_id)
+    job = db.obtener_job(job_id) or {}
+    perfil = db.obtener_perfil(job["perfil"]) if job.get("perfil") else None
+    glosario = terminos_de(unir_terminos(
+        perfil.get("vocabulario") if perfil else None, job.get("vocabulario")))
+    texto = render.para_claude(
+        datos,
+        titulo=job.get("titulo"),
+        perfil=perfil["nombre"] if perfil else None,
+        contexto=job.get("contexto") or datos.get("contexto"),
+        glosario=glosario,
+        peticion=perfil.get("peticion") if perfil else None,
+    )
+    return {"texto": texto}
+
+
 # ------------------------------------------------------------------- worker
 # Lo que usa el equipo con GPU: pide trabajo, lo transcribe y devuelve el
 # resultado. Mismo token que el resto de la API.
@@ -570,6 +594,10 @@ def _vocabulario_de(valor: Any) -> str | None:
     return (unir_terminos(valor) or "")[:2000] or None
 
 
+def _peticion_de(valor: Any) -> str | None:
+    return str(valor or "").strip()[:2000] or None
+
+
 def _participantes_json(valor: Any) -> str | None:
     nombres = [n[:60] for n in terminos_de(valor)][:30]
     return json.dumps(nombres, ensure_ascii=False) if nombres else None
@@ -588,6 +616,7 @@ def perfiles_crear(datos: dict[str, Any]) -> dict[str, Any]:
         nombre=_nombre_de_perfil(datos),
         vocabulario=_vocabulario_de(datos.get("vocabulario")),
         participantes=_participantes_json(datos.get("participantes")),
+        peticion=_peticion_de(datos.get("peticion")),
     )
     return perfil_publico(perfil, 0)
 
@@ -603,6 +632,8 @@ def perfiles_editar(perfil_id: str, datos: dict[str, Any]) -> dict[str, Any]:
         cambios["vocabulario"] = _vocabulario_de(datos["vocabulario"])
     if "participantes" in datos:
         cambios["participantes"] = _participantes_json(datos["participantes"])
+    if "peticion" in datos:
+        cambios["peticion"] = _peticion_de(datos["peticion"])
     perfil = db.actualizar_perfil(perfil_id, **cambios)
     cuenta = db.contar_jobs_por_perfil().get(perfil_id, 0)
     return perfil_publico(perfil, cuenta)  # type: ignore[arg-type]

@@ -173,6 +173,46 @@ with TestClient(app) as c:
     comprobar("el Markdown tambien",
               guardada.get("markdown", "").startswith("# Instalacion Norte"),
               guardada.get("markdown", "")[:40])
+
+    print("\n-- copiar para Claude --")
+    r = c.get(f"/api/jobs/{job_id}/para-claude", headers=AUTH)
+    comprobar("para-claude da 200", r.status_code == 200, r.text)
+    texto = r.json()["texto"]
+    comprobar("lleva el titulo actual", texto.startswith("# Instalacion Norte"), texto[:40])
+    comprobar("cada intervencion con nombre y minuto",
+              "**Javi** [00:00]: Hola" in texto and "**Marta** [01:00]: Adios" in texto, texto)
+    comprobar("sin perfil, la peticion por defecto",
+              "Ordena el contenido por temas" in texto and "Ámbito" not in texto)
+
+    r = c.post("/api/perfiles", headers=AUTH,
+               json={"nombre": "Formacion", "vocabulario": "Alfa, Beta",
+                     "peticion": "  Hazme un resumen en tres lineas.  "})
+    formacion = r.json()
+    comprobar("un perfil guarda su peticion sin espacios",
+              formacion["peticion"] == "Hazme un resumen en tres lineas.", formacion)
+    c.post(f"/api/jobs/{job_id}/ajustes", headers=AUTH, json={"perfil": formacion["id"]})
+    texto = c.get(f"/api/jobs/{job_id}/para-claude", headers=AUTH).json()["texto"]
+    comprobar("con perfil, su ambito, su glosario y su peticion",
+              "**Ámbito**: Formacion" in texto and "Alfa, Beta" in texto
+              and texto.rstrip().endswith("Hazme un resumen en tres lineas.")
+              and "Ordena el contenido" not in texto, texto[-200:])
+    r = c.put(f"/api/perfiles/{formacion['id']}", headers=AUTH, json={"peticion": ""})
+    comprobar("vaciar la peticion vuelve a la de por defecto", r.json()["peticion"] == "",
+              r.json())
+    comprobar("para-claude de algo que no existe da 404",
+              c.get("/api/jobs/noexiste/para-claude", headers=AUTH).status_code == 404)
+
+    from app import render as _render
+    nombres = _render.nombres_legibles({"hablantes": [
+        {"etiqueta": "SPEAKER_00", "nombre": "SPEAKER_00"},
+        {"etiqueta": "SPEAKER_01", "nombre": "Ana"},
+        {"etiqueta": "SPEAKER_02", "nombre": ""}]})
+    comprobar("las voces sin nombre son Persona N",
+              nombres == {"SPEAKER_00": "Persona 1", "SPEAKER_01": "Ana",
+                          "SPEAKER_02": "Persona 2"}, nombres)
+    c.post(f"/api/jobs/{job_id}/ajustes", headers=AUTH, json={"perfil": ""})
+    c.delete(f"/api/perfiles/{formacion['id']}", headers=AUTH)
+
     comprobar("y las voces no se tocan", [h["nombre"] for h in guardada["hablantes"]]
               == ["Javi", "Marta"], guardada["hablantes"])
 

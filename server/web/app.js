@@ -1202,6 +1202,8 @@ function pedirPerfil(perfil = null) {
   $('#campo-perfil-nombre').value = perfil?.nombre || '';
   $('#campo-perfil-vocabulario').value = unirTerminos(perfil?.vocabulario).join(', ');
   $('#campo-perfil-participantes').value = (perfil?.participantes || []).join(', ');
+  $('#campo-perfil-peticion').value = perfil?.peticion || '';
+  $('#perfil-extras-peticion').open = Boolean(perfil?.peticion);
   $('#perfil-eliminar').classList.toggle('oculto', !perfil);
   actualizarCuentaDeTerminos();
   $('#dialogo-perfil').showModal();
@@ -1225,6 +1227,7 @@ async function guardarPerfil() {
     nombre: $('#campo-perfil-nombre').value.trim(),
     vocabulario: $('#campo-perfil-vocabulario').value,
     participantes: $('#campo-perfil-participantes').value,
+    peticion: $('#campo-perfil-peticion').value,
   };
   try {
     await api(actual ? `/perfiles/${actual.id}` : '/perfiles', {
@@ -1403,7 +1406,31 @@ $('#boton-recargar')?.addEventListener('click', () => cargarLista());
 $('#boton-despertar')?.addEventListener('click', despertarPC);
 $('#boton-volver')?.addEventListener('click', () => { location.hash = ''; });
 
+/* El boton de copiar prepara el texto para Claude: cabecera, glosario, avisos
+   de como leer una transcripcion automatica y la peticion del perfil. Lo genera
+   la API, que tiene el perfil y los nombres al dia. */
 $('#boton-copiar')?.addEventListener('click', async () => {
+  const job = trabajoAbierto;
+  if (!job || job.estado !== 'hecho') return avisar('Nada que copiar todavía');
+  const pedir = () => api(`/jobs/${job.id}/para-claude`).then((r) => r.texto);
+  try {
+    // Con ClipboardItem la escritura se pide al tocar y el texto llega despues:
+    // si se esperase a la red antes de copiar, el movil podria negarse por
+    // haber pasado demasiado tiempo desde el toque.
+    if (window.ClipboardItem && navigator.clipboard?.write) {
+      const blob = pedir().then((t) => new Blob([t], { type: 'text/plain' }));
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+    } else {
+      await navigator.clipboard.writeText(await pedir());
+    }
+    avisar('Copiado para Claude');
+  } catch {
+    avisar('No se pudo copiar', true);
+  }
+});
+
+$('#accion-copiar-texto')?.addEventListener('click', async () => {
+  $('#dialogo-acciones').close();
   const texto = $('#detalle').dataset.texto;
   if (!texto) return avisar('Nada que copiar');
   try {
