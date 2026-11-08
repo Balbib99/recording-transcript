@@ -152,7 +152,7 @@ def fusionar(tramos: Iterable[Tramo], separacion: float = 1.0) -> list[Tramo]:
 
 def fiable(seg: Any) -> bool:
     texto = (getattr(seg, "text", "") or "").strip()
-    if not texto or es_alucinacion(texto):
+    if not texto or es_alucinacion(texto) or es_repeticion(texto):
         return False
     return not (seg.no_speech_prob > NO_SPEECH_MAX and seg.avg_logprob < LOGPROB_MIN)
 
@@ -180,8 +180,8 @@ def rescatar(segmentos: list[dict], wave: Any, duracion: float,
              log: Callable[[str], None]) -> tuple[list[dict], list[dict]]:
     """Revisa los tramos sospechosos. Devuelve (segmentos, tramos revisados).
 
-    `transcribir` recibe el audio del tramo y devuelve segmentos de
-    faster-whisper (con start, end, text, no_speech_prob y avg_logprob).
+    `transcribir(audio, con_vocabulario)` devuelve segmentos de faster-whisper
+    (con start, end, text, no_speech_prob y avg_logprob).
     """
     tramos = buscar_tramos(segmentos, wave, duracion)
     if not tramos:
@@ -192,12 +192,11 @@ def rescatar(segmentos: list[dict], wave: Any, duracion: float,
     revisados = []
     for tramo in tramos:
         trozo = wave[int(tramo.start * SAMPLE_RATE):int(tramo.end * SAMPLE_RATE)]
-        nuevos = [
-            {"start": round(tramo.start + s.start, 3),
-             "end": round(min(tramo.end, tramo.start + s.end), 3),
-             "text": s.text.strip()}
-            for s in transcribir(trozo) if fiable(s)
-        ]
+        nuevos = _transcribir_tramo(tramo, trozo, transcribir, True)
+        if not nuevos:
+            # El vocabulario a veces es lo que hace delirar al modelo
+            # ("NVR, NVR, NVR..."): segundo intento sin el.
+            nuevos = _transcribir_tramo(tramo, trozo, transcribir, False)
         segmentos = sustituir(segmentos, tramo, nuevos)
         info = tramo.como_dict()
         info["segmentos"] = len(nuevos)
@@ -206,6 +205,16 @@ def rescatar(segmentos: list[dict], wave: Any, duracion: float,
             f"{len(nuevos)} segmento(s)")
 
     return limpiar(segmentos), revisados
+
+
+def _transcribir_tramo(tramo: Tramo, trozo: Any, transcribir: Callable,
+                       con_vocabulario: bool) -> list[dict]:
+    return [
+        {"start": round(tramo.start + s.start, 3),
+         "end": round(min(tramo.end, tramo.start + s.end), 3),
+         "text": s.text.strip()}
+        for s in transcribir(trozo, con_vocabulario) if fiable(s)
+    ]
 
 
 def limpiar(segmentos: list[dict]) -> list[dict]:

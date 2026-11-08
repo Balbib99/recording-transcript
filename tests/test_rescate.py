@@ -85,7 +85,7 @@ def test_rescatar_sustituye_y_filtra():
     segmentos = [seg(0, 20, "Texto normal " * 20), seg(20, 45, "¡SUSCRIBETE!"),
                  seg(45, 60, "Texto normal " * 15)]
 
-    def transcribir(trozo):
+    def transcribir(trozo, con_vocabulario):
         assert len(trozo) == 25 * SR
         return [fw(0, 10, " es decir, un remoto y una presencial"),
                 fw(10, 15, " ¡Suscríbete!"),                          # inventada
@@ -104,5 +104,21 @@ def test_rescatar_sustituye_y_filtra():
 def test_si_el_rescate_no_saca_nada_se_borra_la_alucinacion():
     wave = audio(30, [(0, 30)])
     segmentos = [seg(0, 20, "Texto normal " * 20), seg(20, 30, "¡Gracias por ver este vídeo!")]
-    nuevos, _ = r.rescatar(segmentos, wave, 30, lambda trozo: [], lambda _: None)
+    nuevos, _ = r.rescatar(segmentos, wave, 30, lambda trozo, voc: [], lambda _: None)
     assert [s["text"] for s in nuevos] == [segmentos[0]["text"]]
+
+
+def test_reintenta_sin_vocabulario_si_delira():
+    wave = audio(30, [(0, 30)])
+    segmentos = [seg(0, 20, "Texto normal " * 20), seg(20, 30, "¡Suscríbete!")]
+    llamadas = []
+
+    def transcribir(trozo, con_vocabulario):
+        llamadas.append(con_vocabulario)
+        if con_vocabulario:
+            return [fw(0, 10, " NVR, NVR, NVR, NVR, NVR")]
+        return [fw(0, 10, " a lo mejor por ser muy grande")]
+
+    nuevos, _ = r.rescatar(segmentos, wave, 30, transcribir, lambda _: None)
+    assert llamadas == [True, False]
+    assert nuevos[-1]["text"] == "a lo mejor por ser muy grande"

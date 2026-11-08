@@ -224,10 +224,11 @@ def transcribe(source: Path, cfg: Config, log: Logger,
         # tramo a tramo con el mismo modelo. Ver recordingcraft/rescate.py
         revisados: list[dict] = []
         if wcfg.get("rescate", True):
-            def transcribir_tramo(trozo):
+            def transcribir_tramo(trozo, con_vocabulario):
                 segs, _ = model.model.transcribe(
                     trozo, language=detected, beam_size=5, vad_filter=False,
-                    condition_on_previous_text=False, hotwords=vocabulario or None,
+                    condition_on_previous_text=False,
+                    hotwords=(vocabulario or None) if con_vocabulario else None,
                 )
                 return list(segs)
             try:
