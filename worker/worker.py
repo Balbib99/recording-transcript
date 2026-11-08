@@ -8,6 +8,9 @@ el mismo y lo reabre si se cae. Para el usuario es un unico proceso.
     python worker/worker.py --estado    # que hay en la cola
     python worker/worker.py --insistir  # no rendirse si la API aun no responde
 
+En bucle continuo, worker.py es un supervisor que lanza el worker de verdad
+como proceso hijo y lo relanza cuando cambia el codigo o config.toml.
+
 Configuracion en worker/.env (ver .env.example). Los ajustes de transcripcion
 (modelo, idioma, diarizacion) salen del config.toml del proyecto, el mismo que
 usa el CLI.
@@ -20,6 +23,7 @@ import contextlib
 import ctypes
 import importlib.util
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -143,9 +147,30 @@ def procesar(job: dict[str, Any], cfg) -> None:
 
 # ------------------------------------------------------------------- bucles
 
+# Codigo de salida con el que el worker pide que lo vuelvan a lanzar.
+REINICIAR = 75
+
+# Lo que, si cambia, obliga a reiniciar: Python no recarga el codigo de un
+# proceso en marcha, y el worker puede pasar semanas encendido.
+VIGILADOS = [RAIZ / "src" / "recordingcraft", RAIZ / "worker", RAIZ / "config.toml"]
+
+
+def huella_del_codigo() -> float:
+    fechas = [0.0]
+    for ruta in VIGILADOS:
+        ficheros = [ruta] if ruta.is_file() else ruta.glob("*.py") if ruta.is_dir() else []
+        fechas += [f.stat().st_mtime for f in ficheros]
+    return max(fechas)
+
+
 def ciclo(cfg, tunel: Tunel, una_vez: bool) -> int:
     procesados = 0
+    huella = huella_del_codigo()
     while True:
+        # Solo entre trabajos: nunca se corta una transcripcion a medias.
+        if not una_vez and huella_del_codigo() != huella:
+            log("el codigo o la configuracion han cambiado: reiniciando el worker")
+            return REINICIAR
         try:
             tunel.abrir()
             job = reclamar()
@@ -258,6 +283,26 @@ def unico_en_marcha() -> socket.socket | None:
         return None
 
 
+def supervisar(argumentos: list[str]) -> int:
+    """Lanza el worker de verdad como proceso hijo y lo relanza si lo pide.
+
+    Este proceso no carga modelos ni coge el candado: solo vigila. Asi, quien
+    lo arranco (la tarea programada, INICIAR-WORKER.cmd) sigue viendo un unico
+    proceso que no termina, aunque el worker se reinicie al actualizarse.
+    """
+    orden = [sys.executable, str(Path(__file__).resolve()), "--hijo", *argumentos]
+    while True:
+        hijo = subprocess.Popen(orden)
+        try:
+            codigo = hijo.wait()
+        except KeyboardInterrupt:
+            # Ctrl+C le llega tambien al hijo: se le deja terminar.
+            hijo.wait()
+            return 130
+        if codigo != REINICIAR:
+            return codigo
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Worker de transcripcion de RecordingCraft")
     parser.add_argument("--once", action="store_true", help="procesa un trabajo y termina")
@@ -266,7 +311,12 @@ def main() -> int:
                         help="no abrir tunel SSH (la API ya es accesible)")
     parser.add_argument("--insistir", action="store_true",
                         help="si la API no responde, seguir reintentando en vez de salir")
+    parser.add_argument("--hijo", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    # El bucle continuo corre bajo un supervisor que lo reinicia al actualizar.
+    if not (args.hijo or args.once or args.estado):
+        return supervisar(sys.argv[1:])
 
     if not API_TOKEN:
         log("Falta RC_API_TOKEN en worker/.env")

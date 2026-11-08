@@ -128,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File scripts\instalar-arranque-worker.ps1
 # Quitar: para el worker y borra la tarea
 powershell -ExecutionPolicy Bypass -File scripts\quitar-arranque-worker.ps1
 
-# Parar sin quitar, y volver a arrancar (tras tocar config.toml o actualizar el codigo)
+# Parar sin quitar, y volver a arrancar
 powershell -ExecutionPolicy Bypass -File scripts\quitar-arranque-worker.ps1 -SoloParar
 Start-ScheduledTask -TaskName "RecordingCraft Worker"
 
@@ -136,6 +136,12 @@ Start-ScheduledTask -TaskName "RecordingCraft Worker"
 Get-ScheduledTask -TaskName "RecordingCraft Worker"
 Get-Content worker/worker.log -Tail 20
 ```
+
+**Se actualiza solo.** Si cambia el código (`src/recordingcraft`, `worker/`) o
+`config.toml`, el worker se reinicia en cuanto termina lo que está transcribiendo; en el
+registro aparece «el codigo o la configuracion han cambiado». Lo hace un pequeño proceso
+supervisor que lanza el worker de verdad como hijo, así que la tarea sigue viendo un
+único proceso. Sin esto, un worker encendido desde hace días seguiría con el código viejo.
 
 Para cambiar algo, edita `scripts/instalar-arranque-worker.ps1` y vuelve a lanzarlo:
 sustituye la tarea. Ahí se decide el retraso al arrancar (30 s), la prioridad y los
