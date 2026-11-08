@@ -194,6 +194,7 @@ Lo que más vas a tocar:
 | `whisper.language` | `es` | `auto` si hay reuniones en varios idiomas |
 | `whisper.compute_type` | `int8_float16` | Elegido para los 6 GB de la 1660. Si ves texto raro, prueba `int8`; en CPU se fuerza `int8` |
 | `whisper.batch_size` | `4` | Bájalo a `2` si te quedas sin VRAM, súbelo si te sobra |
+| `whisper.rescate` | `true` | Vuelve a transcribir los tramos que el modo por lotes pierde o se inventa (ver «Problemas frecuentes») |
 | `diarization.min/max_speakers` | `0` | Acota el número de personas habituales |
 | `output.merge_gap_seconds` | `1.5` | Cuánto silencio admite antes de partir una intervención |
 | `input.on_success` | `archive` | `keep` si prefieres que el original no se mueva del inbox |
@@ -223,6 +224,15 @@ el orden correcto)
 **La diarización no se ejecuta** — `rc doctor` te dirá si falta el `HF_TOKEN` o si no has
 aceptado las condiciones de los modelos de pyannote. Sin eso la transcripción sale
 igualmente, pero sin hablantes.
+
+**Sale «¡Suscríbete!» o «Gracias por ver este vídeo» y falta lo que se dijo** — no es un
+vídeo de fondo: es Whisper inventándose frases de los subtítulos de YouTube con los que
+se entrenó. WhisperX transcribe por lotes y, cuando una ventana de 30 s sale mal, no la
+reintenta. Pasa más con vocabulario, porque los `hotwords` empujan al modelo. Por eso,
+tras la pasada por lotes, `src/recordingcraft/rescate.py` busca frases inventadas,
+repeticiones («Y... Y... Y...»), segmentos largos con poco texto y huecos sin texto
+donde hay voz, y los vuelve a transcribir uno a uno con reintentos. Lo que revisa queda
+en `tramos_revisados` del `meeting.json`. Se desactiva con `whisper.rescate = false`.
 
 **Dice que ya está procesado** — se reconoce por el hash del audio, no por el nombre.
 Usa `--force` para repetirlo.

@@ -24,6 +24,7 @@ language = "es"             # "" o "auto" para deteccion automatica
 device = "cuda"             # cuda | cpu
 compute_type = "int8_float16"   # GTX 1660 (6 GB): int8_float16. Si da problemas: int8. En CPU: int8
 batch_size = 4              # bajalo a 2 si te quedas sin VRAM
+rescate = true              # revisa tramos perdidos o inventados ("Suscribete"). Ver src/recordingcraft/rescate.py
 # Pista de contexto para mejorar nombres propios y jerga (opcional):
 initial_prompt = ""
 # Terminos que el modelo tiene presentes en TODO el audio, de cualquier perfil,

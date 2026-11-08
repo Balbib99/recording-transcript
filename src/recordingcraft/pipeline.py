@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from recordingcraft import audio as au
+from recordingcraft import rescate
 from recordingcraft.config import Config
 
 Logger = Callable[[str], None]
@@ -218,6 +219,23 @@ def transcribe(source: Path, cfg: Config, log: Logger,
         log("  · transcribiendo")
         result = model.transcribe(wave, batch_size=batch_size, print_progress=True)
         detected = result.get("language") or language or "es"
+
+        # Lo que el modo por lotes pierde o se inventa, se vuelve a transcribir
+        # tramo a tramo con el mismo modelo. Ver recordingcraft/rescate.py
+        revisados: list[dict] = []
+        if wcfg.get("rescate", True):
+            def transcribir_tramo(trozo):
+                segs, _ = model.model.transcribe(
+                    trozo, language=detected, beam_size=5, vad_filter=False,
+                    condition_on_previous_text=False, hotwords=vocabulario or None,
+                )
+                return list(segs)
+            try:
+                result["segments"], revisados = rescate.rescatar(
+                    result["segments"], wave, duration, transcribir_tramo, log)
+            except Exception as exc:
+                log(f"  ! revision de tramos omitida: {exc}")
+                result["segments"] = rescate.limpiar(result["segments"])
         del model
         _free(device)
 
@@ -282,6 +300,7 @@ def transcribe(source: Path, cfg: Config, log: Logger,
         "device": device,
         "compute_type": compute_type,
         "aligned": aligned,
+        "tramos_revisados": revisados,
         "vocabulario": vocabulario or None,
         "contexto": contexto or None,
         "diarization": diar_info,
