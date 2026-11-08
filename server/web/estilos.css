@@ -916,3 +916,100 @@ fieldset.grupo .pista { margin: 8px 0 0; }
   .lista, .detalle, .barra, .panel { max-width: 760px; margin-inline: auto; }
   .pie, .progreso, .aviso { max-width: 760px; margin-inline: auto; }
 }
+
+/* ------------------------------------------------ asistente de subida
+
+   Una pregunta por pantalla. Los botones de opcion avanzan con un toque; la
+   barra de abajo solo sirve para volver, saltar o subir. */
+
+.asistente-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -6px -8px 10px 0;
+}
+.asistente-paso { font-family: var(--mono); font-size: .72rem; letter-spacing: .02em; }
+.asistente-puntos { display: flex; gap: 5px; flex: 1; }
+.asistente-puntos span {
+  width: 18px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--borde);
+}
+.asistente-puntos .hecho { background: var(--acento-borde); }
+.asistente-puntos .actual { background: var(--acento); }
+.asistente-cerrar {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--apagado);
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.asistente-fichero {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.asistente-pantalla[hidden] { display: none; }
+.asistente-pantalla { margin-bottom: 6px; }
+.asistente-pantalla .pista { margin: 0 0 12px; }
+
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.numero {
+  min-height: 56px;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-medio);
+  box-shadow: none;
+}
+.numero:active { background: var(--superficie-alta); }
+.numero.actual, .asistente-pantalla .perfil-boton.actual {
+  color: var(--acento-fuerte);
+  background: var(--acento-suave);
+  border-color: var(--acento);
+  box-shadow: 0 0 0 1px var(--acento);
+}
+.asistente-pantalla > .perfil-boton { margin-bottom: 14px; justify-content: center; }
+
+.asistente-resumen { margin: 0 0 6px; }
+.asistente-resumen div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border-top: 1px solid var(--borde-suave);
+}
+.asistente-resumen dt { flex: 0 0 82px; font-size: .78rem; color: var(--apagado); }
+.asistente-resumen dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: .9rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.asistente-resumen .enlace {
+  min-height: 44px;
+  padding: 0 4px;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--acento-fuerte);
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+#dialogo-asistente .extras textarea { margin-top: 4px; }

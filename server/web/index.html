@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="iconos/icono-192.png">
 <link rel="apple-touch-icon" href="iconos/icono-192.png">
-<link rel="stylesheet" href="estilos.css?v=8">
+<link rel="stylesheet" href="estilos.css?v=9">
 </head>
 <body>
 
@@ -295,16 +295,54 @@
   </form>
 </dialog>
 
-<dialog id="dialogo-compartido">
-  <form method="dialog" id="form-compartido">
-    <h2>¿A qué perfil va?</h2>
-    <p class="apagado" id="compartido-fichero"></p>
-    <div id="compartido-perfiles" class="perfiles-botones"></div>
-    <div class="dialogo-botones">
-      <button value="cancelar" class="secundario">Cancelar</button>
-      <button value="ajustes" class="secundario">Más ajustes</button>
-    </div>
-  </form>
+<!-- Asistente al subir: un paso por pantalla. Todo es opcional menos subir. -->
+<dialog id="dialogo-asistente" aria-labelledby="asistente-pregunta">
+  <div class="asistente-cabecera">
+    <span class="asistente-paso apagado" id="asistente-paso"></span>
+    <span class="asistente-puntos" id="asistente-puntos" aria-hidden="true"></span>
+    <button type="button" class="asistente-cerrar" id="asistente-cerrar"
+            aria-label="Cancelar la subida">×</button>
+  </div>
+  <h2 id="asistente-pregunta"></h2>
+  <p class="apagado asistente-fichero" id="asistente-fichero"></p>
+
+  <section class="asistente-pantalla" data-paso="perfil">
+    <div id="asistente-perfiles" class="perfiles-botones"></div>
+  </section>
+
+  <section class="asistente-pantalla" data-paso="personas">
+    <p class="pista apagado">Saberlo ayuda a no partir a una persona en dos voces, ni
+      a juntar a dos en una.</p>
+    <div class="numeros" id="asistente-numeros"></div>
+    <button type="button" class="perfil-boton ninguno" data-personas="0">No lo sé</button>
+  </section>
+
+  <section class="asistente-pantalla" data-paso="contexto">
+    <input type="text" id="asistente-contexto" maxlength="300" autocomplete="off"
+           enterkeyhint="next"
+           placeholder="Una visita de obra, una llamada comercial...">
+    <p class="pista apagado">Opcional. Una frase basta; ayuda sobre todo al principio
+      de la grabación.</p>
+  </section>
+
+  <section class="asistente-pantalla" data-paso="resumen">
+    <label class="campo">Título
+      <input type="text" id="asistente-titulo" autocomplete="off" maxlength="80"
+             enterkeyhint="send">
+    </label>
+    <dl class="asistente-resumen" id="asistente-resumen"></dl>
+    <details class="extras">
+      <summary>Vocabulario solo para esta reunión</summary>
+      <textarea id="asistente-vocabulario" rows="2" maxlength="2000"
+                placeholder="Modelos, nombres, marcas de esta reunión..."></textarea>
+      <p class="pista apagado">Se suma al del perfil. Pocos y pertinentes.</p>
+    </details>
+  </section>
+
+  <div class="dialogo-botones">
+    <button type="button" class="secundario" id="asistente-atras">Atrás</button>
+    <button type="button" class="principal" id="asistente-seguir">Siguiente</button>
+  </div>
 </dialog>
 
 <dialog id="dialogo-cambiar-perfil">
@@ -358,6 +396,6 @@
 
 <div id="aviso" class="aviso oculto"></div>
 
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

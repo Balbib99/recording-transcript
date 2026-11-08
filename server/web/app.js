@@ -19,7 +19,6 @@ let borradoPendiente = null;           // { ids, desdeDetalle } esperando confir
 let perfiles = [];                // los perfiles de trabajo, tal como los da la Pi
 let perfilesCargados = false;     // false mientras no se sepa si el servidor los tiene
 let filtro = '';                  // '' todas, 'ninguno' sin perfil, o el id de un perfil
-let compartidoPendiente = null;   // { fichero, titulo } esperando que se elija perfil
 
 try {
   const guardados = JSON.parse(localStorage.getItem(CLAVE_PERFILES) || 'null');
@@ -1397,7 +1396,7 @@ $('#form-token')?.addEventListener('submit', async (e) => {
 $('#campo-fichero')?.addEventListener('change', (e) => {
   const fichero = e.target.files[0];
   e.target.value = '';
-  if (fichero) pedirAjustes(fichero);
+  if (fichero) abrirAsistente(fichero);
 });
 
 $('#boton-recargar')?.addEventListener('click', () => cargarLista());
@@ -1446,7 +1445,7 @@ async function recogerCompartido() {
     const titulo = decodeURIComponent(guardado.headers.get('X-Titulo') || '');
     await cache.delete(clave);
 
-    pedirPerfilYSubir(
+    abrirAsistente(
       new File([datos], conExtension(nombre, datos.type), { type: datos.type }),
       titulo || null);
   } catch (e) {
@@ -1454,17 +1453,196 @@ async function recogerCompartido() {
   }
 }
 
-/* Al compartir desde la Grabadora no hay dialogo de ajustes, pero si hace falta
-   saber a que perfil va: un boton por perfil, y con un toque se sube. */
-function pedirPerfilYSubir(fichero, titulo) {
-  // Un servidor sin perfiles se comporta como siempre: sube directo.
-  if (!perfiles.length) { subir(fichero, titulo); return; }
+// ------------------------------------------------- asistente de subida
 
-  compartidoPendiente = { fichero, titulo };
-  $('#compartido-fichero').textContent = titulo || fichero.name;
-  botonesDePerfil($('#compartido-perfiles'), { actual: ultimoPerfil(), nota: 'el último' });
-  $('#dialogo-compartido').showModal();
+/* Antes de transcribir, una pregunta por pantalla: perfil, cuantas personas,
+   de que va, y un resumen con el titulo. Los pasos de botones avanzan con un
+   toque; nada es obligatorio. Se usa al compartir desde la Grabadora y al
+   elegir un fichero en la app. */
+let asistente = null;   // { fichero, pasos, i, perfil, personas }
+
+const PREGUNTAS = {
+  perfil: '¿A qué perfil va?',
+  personas: '¿Cuántas personas hablan?',
+  contexto: '¿De qué va la reunión?',
+  resumen: 'Listo para transcribir',
+};
+
+function abrirAsistente(fichero, titulo = null) {
+  const punto = fichero.name.lastIndexOf('.');
+  asistente = {
+    fichero,
+    pasos: [...(perfiles.length ? ['perfil'] : []), 'personas', 'contexto', 'resumen'],
+    i: 0,
+    perfil: perfilDe(ultimoPerfil()) ? ultimoPerfil() : (perfiles[0]?.id || ''),
+    personas: 0,
+  };
+  $('#asistente-fichero').textContent =
+    `${titulo || fichero.name} · ${(fichero.size / 1e6).toFixed(1)} MB`;
+  $('#asistente-titulo').value = titulo || (punto > 0 ? fichero.name.slice(0, punto) : fichero.name);
+  $('#asistente-contexto').value = '';
+  $('#asistente-vocabulario').value = '';
+  $('#asistente-vocabulario').closest('details').open = false;
+
+  const numeros = $('#asistente-numeros');
+  if (!numeros.childElementCount) {
+    for (let n = 1; n <= 8; n++) {
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'numero';
+      boton.dataset.personas = String(n);
+      boton.textContent = n === 8 ? '8+' : String(n);
+      numeros.append(boton);
+    }
+  }
+  pintarPaso();
+  $('#dialogo-asistente').showModal();
 }
+
+function pintarPaso() {
+  const { pasos, i } = asistente;
+  const paso = pasos[i];
+  $('#asistente-paso').textContent = `Paso ${i + 1} de ${pasos.length}`;
+  const puntos = $('#asistente-puntos');
+  puntos.textContent = '';
+  pasos.forEach((_, j) => {
+    const p = document.createElement('span');
+    p.className = j < i ? 'hecho' : j === i ? 'actual' : '';
+    puntos.append(p);
+  });
+  $('#asistente-pregunta').textContent = PREGUNTAS[paso];
+  for (const pantalla of document.querySelectorAll('.asistente-pantalla')) {
+    pantalla.hidden = pantalla.dataset.paso !== paso;
+  }
+
+  if (paso === 'perfil') {
+    botonesDePerfil($('#asistente-perfiles'),
+      { actual: asistente.perfil, conNinguno: true, nota: 'elegido' });
+    for (const b of $('#asistente-perfiles').children) b.type = 'button';
+  }
+  if (paso === 'personas') {
+    for (const b of document.querySelectorAll('#dialogo-asistente [data-personas]')) {
+      b.classList.toggle('actual', Number(b.dataset.personas) === asistente.personas);
+    }
+  }
+  if (paso === 'resumen') pintarResumen();
+
+  const atras = $('#asistente-atras');
+  atras.textContent = i === 0 ? 'Cancelar' : 'Atrás';
+  const seguir = $('#asistente-seguir');
+  seguir.textContent = paso === 'resumen' ? 'Transcribir'
+    : asistente.volver ? 'Volver al resumen'
+    : paso === 'contexto' && !$('#asistente-contexto').value.trim() ? 'Saltar'
+    : 'Siguiente';
+
+  // El teclado solo se abre donde hay que escribir.
+  if (paso === 'contexto') $('#asistente-contexto').focus();
+  else seguir.focus();
+}
+
+function pintarResumen() {
+  const perfil = perfilDe(asistente.perfil);
+  const contexto = $('#asistente-contexto').value.trim();
+  const filas = [
+    ...(perfiles.length ? [['Perfil', perfil ? perfil.nombre : 'Ninguno', 'perfil']] : []),
+    ['Personas', asistente.personas
+      ? (asistente.personas === 8 ? '8 o más' : String(asistente.personas))
+      : 'las que detecte', 'personas'],
+    ['De qué va', contexto || 'sin indicar', 'contexto'],
+  ];
+  const lista = $('#asistente-resumen');
+  lista.textContent = '';
+  for (const [nombre, valor, paso] of filas) {
+    const fila = document.createElement('div');
+    const dt = document.createElement('dt');
+    dt.textContent = nombre;
+    const dd = document.createElement('dd');
+    dd.textContent = valor;
+    const cambiar = document.createElement('button');
+    cambiar.type = 'button';
+    cambiar.className = 'enlace';
+    cambiar.textContent = 'Cambiar';
+    cambiar.setAttribute('aria-label', `Cambiar ${nombre.toLowerCase()}`);
+    cambiar.onclick = () => {
+      asistente.volver = true;   // tras corregir, de vuelta al resumen
+      irAPaso(asistente.pasos.indexOf(paso));
+    };
+    fila.append(dt, dd, cambiar);
+    lista.append(fila);
+  }
+}
+
+function irAPaso(i) {
+  asistente.i = Math.max(0, Math.min(i, asistente.pasos.length - 1));
+  if (asistente.pasos[asistente.i] === 'resumen') asistente.volver = false;
+  pintarPaso();
+}
+
+/* Avanzar: al siguiente paso, o al resumen si se vino desde alli a cambiar algo. */
+function avanzar() {
+  irAPaso(asistente.volver ? asistente.pasos.length - 1 : asistente.i + 1);
+}
+
+function terminarAsistente() {
+  const a = asistente;
+  asistente = null;
+  $('#dialogo-asistente').close();
+  if (perfiles.length) recordarPerfil(a.perfil);
+  // 8 es "8 o mas": no es un numero exacto, asi que no se fuerza.
+  const hablantes = a.personas && a.personas < 8 ? String(a.personas) : '';
+  subir(a.fichero, $('#asistente-titulo').value.trim() || null, {
+    perfil: a.perfil,
+    hablantes,
+    contexto: $('#asistente-contexto').value.trim(),
+    vocabulario: $('#asistente-vocabulario').value.trim(),
+  });
+}
+
+function cancelarAsistente() {
+  if (!asistente) return;
+  asistente = null;
+  $('#dialogo-asistente').close();
+  avisar('No se ha subido nada');
+}
+
+$('#asistente-seguir')?.addEventListener('click', () => {
+  if (asistente.pasos[asistente.i] === 'resumen') terminarAsistente();
+  else avanzar();
+});
+$('#asistente-atras')?.addEventListener('click', () => {
+  if (asistente.i === 0) cancelarAsistente(); else irAPaso(asistente.i - 1);
+});
+$('#asistente-cerrar')?.addEventListener('click', cancelarAsistente);
+// Esc o el boton atras de Android cierran el dialogo: que cuente como cancelar.
+$('#dialogo-asistente')?.addEventListener('cancel', (e) => { e.preventDefault(); cancelarAsistente(); });
+
+$('#asistente-perfiles')?.addEventListener('click', (e) => {
+  const boton = e.target.closest('button');
+  if (!boton) return;
+  asistente.perfil = boton.value.replace(/^perfil:/, '');
+  avanzar();
+});
+$('#dialogo-asistente')?.addEventListener('click', (e) => {
+  const boton = e.target.closest('[data-personas]');
+  if (!boton || !asistente) return;
+  asistente.personas = Number(boton.dataset.personas);
+  avanzar();
+});
+$('#asistente-contexto')?.addEventListener('input', () => {
+  if (asistente.volver) return;
+  $('#asistente-seguir').textContent =
+    $('#asistente-contexto').value.trim() ? 'Siguiente' : 'Saltar';
+});
+$('#asistente-contexto')?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  e.preventDefault();
+  avanzar();
+});
+$('#asistente-titulo')?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  e.preventDefault();
+  terminarAsistente();
+});
 
 /* Un boton por perfil. Su valor lleva el id, que es lo que recoge el submit. */
 function botonesDePerfil(caja, { actual = '', conNinguno = false, nota = null } = {}) {
@@ -1494,25 +1672,6 @@ function botonesDePerfil(caja, { actual = '', conNinguno = false, nota = null } 
     caja.append(boton);
   }
 }
-
-$('#form-compartido')?.addEventListener('submit', (e) => {
-  const pendiente = compartidoPendiente;
-  compartidoPendiente = null;
-  if (!pendiente) return;
-
-  const valor = e.submitter?.value || '';
-  if (valor.startsWith('perfil:')) {
-    const id = valor.slice(7);
-    recordarPerfil(id);
-    subir(pendiente.fichero, pendiente.titulo, { perfil: id });
-  } else if (valor === 'ajustes') {
-    // Se abre cuando este dialogo ya se ha cerrado, para que no se pisen.
-    setTimeout(() => pedirAjustes(
-      pendiente.fichero, null, ultimoPerfil() || null, pendiente.titulo, true), 0);
-  } else {
-    avisar('No se ha subido nada');
-  }
-});
 
 /* La Grabadora comparte con nombres que a veces no traen extension, y la API
    la necesita para saber que es. Se deduce del tipo de contenido. */
